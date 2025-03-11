@@ -26,15 +26,15 @@
      inkscape:pageopacity="0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="6.14"
-     inkscape:cx="376.54723"
-     inkscape:cy="87.37785"
+     inkscape:zoom="2.5005284"
+     inkscape:cx="106.57747"
+     inkscape:cy="87.38153"
      inkscape:window-width="3840"
      inkscape:window-height="2054"
      inkscape:window-x="-11"
      inkscape:window-y="-11"
      inkscape:window-maximized="1"
-     inkscape:current-layer="armorPips"
+     inkscape:current-layer="rs_template"
      showgrid="false" />
   <g
      style="mml-color-elements:btLogo,cglLogo,heatScale"
@@ -1137,7 +1137,7 @@
          x="29.229"
          id="type"
          y="28.000"
-         style="font-family:Eurostile;font-size:9.670px;font-weight:normal;font-style:normal;mml-field-width:180.371"
+         style="font-family:Eurostile;font-size:9.67px;font-weight:bold;font-style:normal;mml-field-width:180.371;-inkscape-font-specification:'Eurostile, Bold';font-stretch:normal;font-variant:normal;font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-anchor:start;fill:#231f20"
          text-anchor="start">Lorem Ipsum</text>
       <text
          fill="#231f20"
