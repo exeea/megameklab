@@ -104,6 +104,9 @@ public class RecordSheetPreviewPanel extends JPanel {
     private double initialZoomFactor = zoomFactor;
 
     private Point2D panOffset = new Point2D.Double(0, 0);
+    private double pendingZoomFactor = -1;
+    private Point2D pendingPanOffset = new Point2D.Double(0, 0);
+    private Point pendingZoomPoint;
     private Point lastMousePoint;
     private boolean isPanning = false;
     private boolean isHighQuality = true; // Track rendering quality mode
@@ -120,8 +123,14 @@ public class RecordSheetPreviewPanel extends JPanel {
     private volatile boolean cachedImageDirty = true;
     private SoftReference<BufferedImage> cachedImage;
     private volatile boolean renderingInProgress = false;
-    private final ExecutorService renderingExecutor = Executors.newSingleThreadExecutor();
-    
+    // Shared executor
+    private static final ExecutorService SHARED_EXECUTOR = Executors.newFixedThreadPool(
+            Math.max(1, Runtime.getRuntime().availableProcessors() / 2),
+            r -> {
+                Thread t = new Thread(r, "RecordSheet-Renderer");
+                t.setDaemon(true);
+                return t;
+            });
 
     public RecordSheetPreviewPanel() {
         addMouseListener(new RightClickListener());
@@ -268,18 +277,44 @@ public class RecordSheetPreviewPanel extends JPanel {
                 Point mousePoint = e.getPoint();
                 double oldZoom = zoomFactor;
 
-                // Adjust zoom by scroll amount
-                zoomFactor -= e.getPreciseWheelRotation() * ZOOM_STEP;
-                zoomFactor = Math.max(minZoom, Math.min(MAX_ZOOM, zoomFactor));
+                // Calculate new zoom with acceleration for larger changes
+                double zoomDelta = e.getPreciseWheelRotation() * ZOOM_STEP;
+                if (Math.abs(e.getPreciseWheelRotation()) > 1.5) {
+                    zoomDelta *= 1.5; // Accelerate for faster scrolling
+                }
 
-                if (oldZoom != zoomFactor) {
-                    // Adjust pan to keep mouse position fixed
-                    double zoomRatio = zoomFactor / oldZoom;
+                double newZoom = zoomFactor - zoomDelta;
+                newZoom = Math.max(minZoom, Math.min(MAX_ZOOM, newZoom));
 
-                    panOffset.setLocation(
+                if (oldZoom != newZoom) {
+                    // Store pending zoom state
+                    pendingZoomFactor = newZoom;
+                    pendingZoomPoint = mousePoint;
+
+                    // Calculate pan offset for new zoom to keep mouse position fixed
+                    double zoomRatio = newZoom / oldZoom;
+                    pendingPanOffset.setLocation(
                             mousePoint.getX() - (mousePoint.getX() - panOffset.getX()) * zoomRatio,
                             mousePoint.getY() - (mousePoint.getY() - panOffset.getY()) * zoomRatio);
-                    cachedImage = null; // Invalidate cached image on zoom change
+
+                    // Only update current zoom when image is available
+                    if (cachedImage != null && cachedImage.get() != null) {
+                        zoomFactor = newZoom;
+                        panOffset.setLocation(pendingPanOffset);
+
+                        // For significant changes, regenerate the image
+                        if (Math.abs(oldZoom - newZoom) / oldZoom > 0.05) {
+                            invalidateCachedImage();
+                            scheduleBackgroundRendering();
+                        }
+                    } else {
+                        // If no cached image exists, update directly
+                        zoomFactor = newZoom;
+                        panOffset.setLocation(pendingPanOffset);
+                        invalidateCachedImage();
+                        scheduleBackgroundRendering();
+                    }
+
                     repaint();
                 }
             }
@@ -363,7 +398,9 @@ public class RecordSheetPreviewPanel extends JPanel {
         // Only regenerate the image if needed
         if (needsNewImage) {
             invalidateCachedImage();
-            renderCachedImage();
+            scheduleBackgroundRendering();
+        } else {
+            repaint();
         }
 
         // Center logic remains the same
@@ -441,12 +478,19 @@ public class RecordSheetPreviewPanel extends JPanel {
         if (renderingInProgress) {
             return;
         }
-
         renderingInProgress = true;
-        renderingExecutor.submit(() -> {
+        SHARED_EXECUTOR.submit(() -> {
             try {
                 renderCachedImage();
-                SwingUtilities.invokeLater(() -> repaint());
+                SwingUtilities.invokeLater(() -> {
+                    // When rendering completes, sync pending zoom state with actual state
+                    if (pendingZoomFactor > 0) {
+                        zoomFactor = pendingZoomFactor;
+                        panOffset.setLocation(pendingPanOffset);
+                        pendingZoomFactor = -1;  // Clear pending state
+                    }
+                    repaint();
+                });
             } finally {
                 renderingInProgress = false;
             }
@@ -458,12 +502,13 @@ public class RecordSheetPreviewPanel extends JPanel {
     }
 
     private void renderCachedImage() {
-        if (!cachedImageDirty && cachedImage != null && cachedImage.get() != null) {
+        // Check if we have any entity to render
+        if (entities == null || entities.isEmpty()) {
+            cachedImage = null;
+            cachedImageDirty = false;
             return;
         }
-        // Check if we have any entity to render
-        if ((entities == null || entities.isEmpty())) {
-            cachedImage = null;
+        if (!cachedImageDirty && cachedImage != null && cachedImage.get() != null) {
             return;
         }
 
@@ -592,23 +637,39 @@ public class RecordSheetPreviewPanel extends JPanel {
             BufferedImage img = cachedImage != null ? cachedImage.get() : null;
             // Generate image if needed
             if (img == null) {
-                renderCachedImage();
-                img = cachedImage != null ? cachedImage.get() : null;
+                scheduleBackgroundRendering();
             }
 
             if (img != null) {
                 // Store original transform for restoration later
                 AffineTransform originalTransform = g.getTransform();
 
+                // If we have pending zoom, use transition pan values
+                Point2D effectivePanOffset = panOffset;
+                if (pendingZoomFactor > 0 && zoomFactor != pendingZoomFactor) {
+                    // We're viewing the old image but with pending zoom parameters
+                    // Need to adjust the offset to maintain visual position
+                    double zoomRatio = zoomFactor / pendingZoomFactor;
+
+                    if (pendingZoomPoint != null) {
+                        // Center around the mouse point where zoom was initiated
+                        effectivePanOffset = new Point2D.Double(
+                                pendingZoomPoint.getX()
+                                        - (pendingZoomPoint.getX() - pendingPanOffset.getX()) / zoomRatio,
+                                pendingZoomPoint.getY()
+                                        - (pendingZoomPoint.getY() - pendingPanOffset.getY()) / zoomRatio);
+                    }
+                }
+
                 // Calculate source region (in image coordinates)
-                double srcX = Math.max(0, -panOffset.getX());
-                double srcY = Math.max(0, -panOffset.getY());
+                double srcX = Math.max(0, -effectivePanOffset.getX());
+                double srcY = Math.max(0, -effectivePanOffset.getY());
 
                 // Create a transform that handles positioning and scaling in one step
                 tempTransform.setTransform(originalTransform);
-                tempTransform.translate(Math.max(0, panOffset.getX()), Math.max(0, panOffset.getY()));
+                tempTransform.translate(Math.max(0, effectivePanOffset.getX()),
+                        Math.max(0, effectivePanOffset.getY()));
                 g.setTransform(tempTransform);
-                
 
                 // Draw the image
                 g.drawImage(img, -(int) srcX, -(int) srcY, null);
@@ -627,10 +688,6 @@ public class RecordSheetPreviewPanel extends JPanel {
 
     // Add cleanup method to release resources when no longer needed
     public void cleanup() {
-        if (renderingExecutor != null) {
-            renderingExecutor.shutdown();
-        }
-
         // Clear cached images to help garbage collection
         cachedImage = null;
         gnSheets = null;
