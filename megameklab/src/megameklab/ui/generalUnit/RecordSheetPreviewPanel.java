@@ -44,7 +44,10 @@ import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+import javax.swing.SwingUtilities;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
@@ -104,6 +107,8 @@ public class RecordSheetPreviewPanel extends JPanel {
     private Point lastMousePoint;
     private boolean isPanning = false;
     private boolean isHighQuality = true; // Track rendering quality mode
+    private final AffineTransform workTransform = new AffineTransform();
+    private final AffineTransform tempTransform = new AffineTransform();
 
     private SoftReference<ArrayList<GraphicsNode>> gnSheets;
     private List<Entity> entities = new ArrayList<>();
@@ -112,18 +117,20 @@ public class RecordSheetPreviewPanel extends JPanel {
     private static final int RESET_VIEW_DELAY = 200; // 200ms delay
 
     // cached image for optimized rendering
+    private volatile boolean cachedImageDirty = true;
     private SoftReference<BufferedImage> cachedImage;
+    private volatile boolean renderingInProgress = false;
+    private final ExecutorService renderingExecutor = Executors.newSingleThreadExecutor();
+    
 
     public RecordSheetPreviewPanel() {
         addMouseListener(new RightClickListener());
         setupMouseHandlers();
         setDoubleBuffered(true);
 
-        // Initialize the debounce timer
-        resetViewTimer = new javax.swing.Timer(RESET_VIEW_DELAY, e -> {
-            // Stop the timer when it fires
+        // Initialize the debounce timer for resetView
+        resetViewTimer = new Timer(RESET_VIEW_DELAY, e -> {
             resetViewTimer.stop();
-            // Execute the actual reset view operation
             resetView();
         });
         resetViewTimer.setRepeats(false); // Ensure it only fires once
@@ -216,10 +223,10 @@ public class RecordSheetPreviewPanel extends JPanel {
                 double centerY = (imgHeight - (bounds.getHeight() * scale)) / 2;
 
                 // Apply transform for this sheet - scale and position
-                AffineTransform transform = new AffineTransform();
-                transform.translate(centerX + xOffset, centerY);
-                transform.scale(scale, scale);
-                gn.setTransform(transform);
+                tempTransform.setToIdentity();
+                tempTransform.translate(centerX + xOffset, centerY);
+                tempTransform.scale(scale, scale);
+                gn.setTransform(tempTransform);
 
                 // Draw to the clipboard image
                 gn.paint(g);
@@ -297,8 +304,10 @@ public class RecordSheetPreviewPanel extends JPanel {
                 if (e.getButton() == MouseEvent.BUTTON1) {
                     setCursor(Cursor.getDefaultCursor());
                     isPanning = false;
-                    isHighQuality = true;
-                    repaint();
+                    SwingUtilities.invokeLater(() -> {
+                        isHighQuality = true;
+                        repaint();
+                    });
                 }
             }
 
@@ -343,23 +352,27 @@ public class RecordSheetPreviewPanel extends JPanel {
     private void resetView() {
         needsViewReset = false;
         isHighQuality = true;
-        zoomFactor = getMinimumZoom();
+
+        // Calculate new zoom factor once
+        double newZoom = getMinimumZoom();
+        boolean needsNewImage = (zoomFactor != newZoom) || (cachedImage == null) || (cachedImage.get() == null);
+
+        zoomFactor = newZoom;
         initialZoomFactor = zoomFactor;
-        renderCachedImage();
+
+        // Only regenerate the image if needed
+        if (needsNewImage) {
+            invalidateCachedImage();
+            renderCachedImage();
+        }
+
+        // Center logic remains the same
         BufferedImage img = cachedImage != null ? cachedImage.get() : null;
         if (img != null) {
-
-            // Calculate offsets to center the image
-            double xOffset = (getWidth() - img.getWidth()) / 2;
-            double yOffset = (getHeight() - img.getHeight()) / 2;
-
-            // Set pan offset to center the image
-            // Use max(0, value) to avoid negative offsets if image is bigger than panel
-            panOffset.setLocation(
-                    Math.max(0, xOffset),
-                    Math.max(0, yOffset));
+            double xOffset = Math.max(0, (getWidth() - img.getWidth()) / 2.0);
+            double yOffset = Math.max(0, (getHeight() - img.getHeight()) / 2.0);
+            panOffset.setLocation(xOffset, yOffset);
         } else {
-            // Default to 0,0 if no image
             panOffset.setLocation(0, 0);
         }
 
@@ -424,7 +437,30 @@ public class RecordSheetPreviewPanel extends JPanel {
         return gnSheets;
     }
 
+    private void scheduleBackgroundRendering() {
+        if (renderingInProgress) {
+            return;
+        }
+
+        renderingInProgress = true;
+        renderingExecutor.submit(() -> {
+            try {
+                renderCachedImage();
+                SwingUtilities.invokeLater(() -> repaint());
+            } finally {
+                renderingInProgress = false;
+            }
+        });
+    }
+
+    private void invalidateCachedImage() {
+        cachedImageDirty = true;
+    }
+
     private void renderCachedImage() {
+        if (!cachedImageDirty && cachedImage != null && cachedImage.get() != null) {
+            return;
+        }
         // Check if we have any entity to render
         if ((entities == null || entities.isEmpty())) {
             cachedImage = null;
@@ -508,10 +544,10 @@ public class RecordSheetPreviewPanel extends JPanel {
                     double centerY = (fullHeight - (bounds.getHeight() * scale)) / 2;
 
                     // Apply transform for this sheet - scale and position
-                    AffineTransform transform = new AffineTransform();
-                    transform.translate(centerX + xOffset, centerY);
-                    transform.scale(scale, scale);
-                    gnSheet.setTransform(transform);
+                    workTransform.setToIdentity();
+                    workTransform.translate(centerX + xOffset, centerY);
+                    workTransform.scale(scale, scale);
+                    gnSheet.setTransform(workTransform);
 
                     // Paint this sheet
                     gnSheet.paint(g);
@@ -527,6 +563,7 @@ public class RecordSheetPreviewPanel extends JPanel {
         g.dispose();
         // Store the image in a SoftReference
         cachedImage = new SoftReference<>(img);
+        cachedImageDirty = false;
     }
 
     private void paintComponent(Graphics2D g, int width, int height) {
@@ -568,9 +605,10 @@ public class RecordSheetPreviewPanel extends JPanel {
                 double srcY = Math.max(0, -panOffset.getY());
 
                 // Create a transform that handles positioning and scaling in one step
-                AffineTransform at = new AffineTransform(originalTransform);
-                at.translate(Math.max(0, panOffset.getX()), Math.max(0, panOffset.getY()));
-                g.setTransform(at);
+                tempTransform.setTransform(originalTransform);
+                tempTransform.translate(Math.max(0, panOffset.getX()), Math.max(0, panOffset.getY()));
+                g.setTransform(tempTransform);
+                
 
                 // Draw the image
                 g.drawImage(img, -(int) srcX, -(int) srcY, null);
@@ -585,6 +623,24 @@ public class RecordSheetPreviewPanel extends JPanel {
     public void paintComponent(Graphics g) {
         super.paintComponent(g);
         paintComponent((Graphics2D) g, getWidth(), getHeight());
+    }
+
+    // Add cleanup method to release resources when no longer needed
+    public void cleanup() {
+        if (renderingExecutor != null) {
+            renderingExecutor.shutdown();
+        }
+
+        // Clear cached images to help garbage collection
+        cachedImage = null;
+        gnSheets = null;
+    }
+
+    // Call this from a removeNotify() method:
+    @Override
+    public void removeNotify() {
+        super.removeNotify();
+        cleanup();
     }
 
     // Add a component resize listener to adjust the view on resize
