@@ -45,7 +45,8 @@ public class EnhancedTabbedPane extends JTabbedPane {
          * @param isEnhancedTab
          */
         public DetachedTabInfo(String title, Icon icon, Component component,
-                Window wrapperComponent, int originalIndex, BiConsumer<Component, InputEvent> closeAction, boolean isEnhancedTab) {
+                Window wrapperComponent, int originalIndex, BiConsumer<Component, InputEvent> closeAction,
+                boolean isEnhancedTab) {
             this.title = title;
             this.icon = icon;
             this.component = component;
@@ -76,6 +77,7 @@ public class EnhancedTabbedPane extends JTabbedPane {
         int tabIndex = -1;
         boolean isDragging = false;
         Point startPoint = null;
+        Point dragOffset = null;
         boolean showingGhost = false;
     }
 
@@ -585,27 +587,93 @@ public class EnhancedTabbedPane extends JTabbedPane {
             ghostWindow.setOpacity(0.7f); // Semi-transparent
         }
 
-        String title = getTitleAt(tabIndex);
-        Icon icon = getIconAt(tabIndex);
+        // Get tab bounds for sizing
+        Rectangle tabBounds = getBoundsAt(tabIndex);
+        if (tabBounds == null) {
+            return;
+        }
+
+        // Calculate offset between mouse position and tab origin
+        Point tabLocation = getLocationOnScreen();
+        tabLocation.x += tabBounds.x;
+        tabLocation.y += tabBounds.y;
+
+        // Store the offset between the mouse location and the tab origin
+        dragState.dragOffset = new Point(
+                location.x - tabLocation.x,
+                location.y - tabLocation.y);
 
         JPanel ghostPanel = new JPanel(new BorderLayout());
 
-        JLabel tabLabel = new JLabel(title);
-        tabLabel.setIcon(icon);
-        tabLabel.setHorizontalTextPosition(JLabel.RIGHT);
+        // Get the tab component (our custom EnhancedTab or default tab)
+        Component tabComponent = getTabComponentAt(tabIndex);
+        String title = getTitleAt(tabIndex);
+        Icon icon = getIconAt(tabIndex);
+        boolean isSelected = (getSelectedIndex() == tabIndex);
 
-        ghostPanel.setBackground(new Color(230, 230, 230));
-        ghostPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Color.GRAY),
-                BorderFactory.createEmptyBorder(4, 8, 4, 8)));
-        ghostPanel.add(tabLabel, BorderLayout.CENTER);
+        // If we have a custom tab component, try to match its appearance
+        if (tabComponent instanceof EnhancedTab) {
+            EnhancedTab enhancedTab = (EnhancedTab) tabComponent;
+            title = enhancedTab.getTitle(); // Get the title from the enhanced tab
+
+            JLabel titleLabel = new JLabel(title);
+            titleLabel.setIcon(icon);
+            titleLabel.setHorizontalTextPosition(JLabel.RIGHT);
+
+            // Match component foreground
+            titleLabel.setForeground(tabComponent.getForeground());
+            titleLabel.setFont(tabComponent.getFont());
+
+            ghostPanel.setOpaque(true);
+            ghostPanel.setBackground(getBackground());
+            ghostPanel.add(titleLabel, BorderLayout.WEST);
+        }
+        // We have a standard tab
+        else {
+            JLabel tabLabel = new JLabel(title);
+            tabLabel.setIcon(icon);
+            tabLabel.setHorizontalTextPosition(JLabel.RIGHT);
+
+            // Look for tab colors based on current L&F
+            Color background = null;
+            Color foreground = null;
+
+            // Try to get colors based on selection state and current L&F
+            if (isSelected) {
+                foreground = UIManager.getColor("TabbedPane.selectedForeground");
+                background = UIManager.getColor("TabbedPane.selectedBackground");
+            }
+
+            // Fallback if selected colors aren't defined
+            if (foreground == null) {
+                foreground = UIManager.getColor("TabbedPane.foreground");
+            }
+            if (background == null) {
+                background = UIManager.getColor("TabbedPane.background");
+            }
+
+            // Use component colors as final fallback
+            if (foreground == null)
+                foreground = getForeground();
+            if (background == null)
+                background = getBackground();
+
+            tabLabel.setForeground(foreground);
+            ghostPanel.setBackground(background);
+            tabLabel.setFont(getFont());
+
+            ghostPanel.add(tabLabel, BorderLayout.CENTER);
+        }
+
+        ghostPanel.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
+        // Size the ghost panel to match the tab's size
+        ghostPanel.setPreferredSize(new Dimension(tabBounds.width, tabBounds.height));
 
         ghostWindow.getContentPane().removeAll();
         ghostWindow.getContentPane().add(ghostPanel);
         ghostWindow.pack();
 
         updateGhostLocation(location);
-
         ghostWindow.setVisible(true);
         dragState.showingGhost = true;
     }
@@ -617,10 +685,11 @@ public class EnhancedTabbedPane extends JTabbedPane {
      */
     private void updateGhostLocation(Point location) {
         if (ghostWindow != null && ghostWindow.isVisible()) {
+            // Position the ghost window so that it appears to be grabbed at the same
+            // place where the user initially clicked
             ghostWindow.setLocation(
-                    location.x + 5, // Slight offset to the right
-                    location.y + 5 // Slight offset down
-            );
+                    location.x - dragState.dragOffset.x,
+                    location.y - dragState.dragOffset.y);
         }
     }
 
@@ -664,12 +733,23 @@ public class EnhancedTabbedPane extends JTabbedPane {
         return false;
     }
 
+    /**
+     * Sets the title prefix for all the detached tab windows
+     * 
+     * @param prefix The prefix to set
+     */
     public void setDetachedTabsPrefixTitle(String prefix) {
         for (Component component : detachedTabs.keySet()) {
             setDetachedTabPrefixTitle(detachedTabs.get(component), prefix);
         }
     }
 
+    /**
+     * Sets the title prefix for a detached tab window
+     * 
+     * @param detachedTab The detached tab info
+     * @param prefix      The prefix to set
+     */
     public void setDetachedTabPrefixTitle(DetachedTabInfo detachedTab, String prefix) {
         if (detachedTab.wrapperComponent instanceof JFrame frame) {
             frame.setTitle(prefix + " - " + detachedTab.title);
@@ -757,7 +837,7 @@ public class EnhancedTabbedPane extends JTabbedPane {
         return actualIndex;
     }
 
-    /*
+    /**
      * Window listener to handle reattaching detached tabs
      */
     private final WindowAdapter componentReattachmentListener = new WindowAdapter() {
@@ -871,7 +951,8 @@ public class EnhancedTabbedPane extends JTabbedPane {
             result = newWrapperDialog;
         }
         // Store the detached tab information for later reattachment
-        detachedTabs.put(result, new DetachedTabInfo(title, icon, detachedComponent, result, tabIndex, closeAction, isEnhancedTab));
+        detachedTabs.put(result,
+                new DetachedTabInfo(title, icon, detachedComponent, result, tabIndex, closeAction, isEnhancedTab));
 
         // Ensure listeners are properly managed - remove first then add
         cleanupAndAddWindowListener(result);
@@ -913,7 +994,7 @@ public class EnhancedTabbedPane extends JTabbedPane {
     /**
      * Reattaches a floating tab to the tabbed pane
      * 
-     * @param frame The floating window to reattach
+     * @param component The floating window to reattach
      */
     private void reattachTab(Component component) {
         if (!detachedTabs.containsKey(component)) {
@@ -1155,6 +1236,9 @@ public class EnhancedTabbedPane extends JTabbedPane {
             return closeButton;
         }
 
+        /**
+         * Finds the index of this tab in the parent pane
+         */
         private int findTabIndex() {
             // Find this tab's index in the parent pane
             for (int i = 0; i < parentPane.getTabCount(); i++) {
@@ -1165,6 +1249,9 @@ public class EnhancedTabbedPane extends JTabbedPane {
             return -1;
         }
 
+        /**
+         * Gets the close action for this tab
+         */
         public BiConsumer<Component, InputEvent> getCloseAction() {
             return closeAction;
         }
@@ -1181,10 +1268,16 @@ public class EnhancedTabbedPane extends JTabbedPane {
             }
         }
 
+        /**
+         * Gets the title of this tab
+         */
         public String getTitle() {
             return titleLabel.getText();
         }
 
+        /**
+         * Gets the component associated with this tab
+         */
         public Component getComponent() {
             return component;
         }
