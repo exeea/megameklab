@@ -373,7 +373,11 @@ public class EnhancedTabbedPane extends JTabbedPane {
         if (actionButtonsPanel.getComponentCount() == 0) {
             return;
         }
-        SwingUtilities.invokeLater(this::positionActionButtons);
+        if (SwingUtilities.isEventDispatchThread()) {
+            positionActionButtons();
+        } else {
+            SwingUtilities.invokeLater(this::positionActionButtons);
+        }
     }
 
     /**
@@ -1090,6 +1094,12 @@ public class EnhancedTabbedPane extends JTabbedPane {
         if (tabLayoutPolicy == SCROLL_TAB_LAYOUT) {
             deferredPositionActionButtons();
         }
+    }
+
+    @Override
+    public void removeNotify() {
+        hideGhostImage();
+        super.removeNotify();
     }
 
     public void dispose() {
