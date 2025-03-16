@@ -373,11 +373,7 @@ public class EnhancedTabbedPane extends JTabbedPane {
         if (actionButtonsPanel.getComponentCount() == 0) {
             return;
         }
-        if (SwingUtilities.isEventDispatchThread()) {
-            positionActionButtons();
-        } else {
-            SwingUtilities.invokeLater(this::positionActionButtons);
-        }
+        SwingUtilities.invokeLater(this::positionActionButtons);
     }
 
     /**
