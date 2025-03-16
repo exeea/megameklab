@@ -64,6 +64,7 @@ public class EnhancedTabbedPane extends JTabbedPane {
     private ConcurrentHashMap<Component, DetachedTabInfo> detachedTabs = new ConcurrentHashMap<>();
     private static final int BUTTON_SPACING = 2;
     private static final int GHOST_DRAG_THRESHOLD = 5;
+    private static final float GHOST_OPACITY = 0.7f; // Semi-transparent
 
     // Button panel that sits outside the regular tabs
     private final JPanel actionButtonsPanel;
@@ -584,7 +585,7 @@ public class EnhancedTabbedPane extends JTabbedPane {
         if (ghostWindow == null) {
             Window parent = SwingUtilities.getWindowAncestor(this);
             ghostWindow = new JWindow(parent);
-            ghostWindow.setOpacity(0.7f); // Semi-transparent
+            ghostWindow.setOpacity(GHOST_OPACITY);
         }
 
         // Get tab bounds for sizing
@@ -684,12 +685,18 @@ public class EnhancedTabbedPane extends JTabbedPane {
      * @param location The current mouse location
      */
     private void updateGhostLocation(Point location) {
-        if (ghostWindow != null && ghostWindow.isVisible()) {
-            // Position the ghost window so that it appears to be grabbed at the same
-            // place where the user initially clicked
+        if (ghostWindow == null || !ghostWindow.isVisible() || location == null || dragState.dragOffset == null) {
+            return;
+        }
+        // Position the ghost window so that it appears to be grabbed at the same
+        // place where the user initially clicked
+        try {
             ghostWindow.setLocation(
                     location.x - dragState.dragOffset.x,
                     location.y - dragState.dragOffset.y);
+
+        } catch (IllegalComponentStateException e) {
+            hideGhostImage();
         }
     }
 
