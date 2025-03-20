@@ -77,6 +77,26 @@ public class EnhancedTabbedPane extends JTabbedPane {
     private boolean actionButtonsAlignAfterTabs = true;
     private int minimumTabsCount = 0;
     private boolean dragDockingToVisibleTabsAreaOnly = false;
+    private TabDetachmentHandler tabDetachmentHandler;
+
+    /**
+     * Interface for customizing tab detachment behavior
+     */
+    @FunctionalInterface
+    public interface TabDetachmentHandler {
+        /**
+         * Handles custom tab detachment behavior
+         * 
+         * @param tabbedPane       The tabbedPane instance
+         * @param tabIndex         The index of the tab being detached
+         * @param component        The component in the tab
+         * @param locationOnScreen The screen location where detachment occurred
+         * @return true if the detachment was handled by this handler, false to use
+         *         default behavior
+         */
+        boolean handleTabDetachment(EnhancedTabbedPane tabbedPane, int tabIndex,
+                Component component, Point locationOnScreen);
+    }
 
     private static class DragState {
         int tabIndex = -1;
@@ -189,6 +209,15 @@ public class EnhancedTabbedPane extends JTabbedPane {
      */
     public void setDragDockingToVisibleTabsAreaOnly(boolean enabled) {
         this.dragDockingToVisibleTabsAreaOnly = enabled;
+    }
+
+    /**
+     * Sets a custom handler for tab detachment operations
+     * 
+     * @param handler The handler to call when a tab is being detached
+     */
+    public void setTabDetachmentHandler(TabDetachmentHandler handler) {
+        this.tabDetachmentHandler = handler;
     }
 
     /**
@@ -577,11 +606,18 @@ public class EnhancedTabbedPane extends JTabbedPane {
                 if (tabDetachingEnabled && !bounds.contains(e.getPoint())) {
                     // Mouse is outside the tabbed pane, detach the tab
                     Point locationOnScreen = e.getLocationOnScreen();
-                    locationOnScreen.x -= 50;
-                    locationOnScreen.y -= 10;
-                    detachTab(dragState.tabIndex, locationOnScreen);
-                } else
-                if (tabReorderingEnabled && dragState.isDragging && dragState.tabIndex >= 0 &&
+                    boolean customHandled = false;
+                    if (tabDetachmentHandler != null && dragState.tabIndex >= 0) {
+                        Component component = getComponentAt(dragState.tabIndex);
+                        customHandled = tabDetachmentHandler.handleTabDetachment(
+                            EnhancedTabbedPane.this, dragState.tabIndex, component, locationOnScreen);
+                    }
+                    if (!customHandled) {
+                        locationOnScreen.x -= 50;
+                        locationOnScreen.y -= 10;
+                        detachTab(dragState.tabIndex, locationOnScreen);
+                    }
+                } else if (tabReorderingEnabled && dragState.isDragging && dragState.tabIndex >= 0 &&
                         targetIndex >= 0 && targetIndex != dragState.tabIndex) {
                     moveTab(dragState.tabIndex, targetIndex);
                 }
@@ -594,7 +630,6 @@ public class EnhancedTabbedPane extends JTabbedPane {
         };
     }
 
-    
     /**
      * @return Rectangle representing the tab header area
      */

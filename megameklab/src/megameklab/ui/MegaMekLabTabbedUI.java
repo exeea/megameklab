@@ -23,11 +23,15 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.DisplayMode;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.event.MouseEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 import javax.swing.Icon;
 import javax.swing.JButton;
@@ -58,6 +62,7 @@ import megameklab.ui.util.EnhancedTabbedPane.TabStateListener;
 import megameklab.util.CConfig;
 import megameklab.util.MMLFileDropTransferHandler;
 import megameklab.util.UnitUtil;
+import megameklab.util.CrossProcessTabManager;
 
 /**
  * Replaces {@link MegaMekLabMainUI} as the top-level window for MML.
@@ -67,12 +72,9 @@ import megameklab.util.UnitUtil;
 public class MegaMekLabTabbedUI extends JFrame implements MenuBarOwner, ChangeListener {
 
     private final List<MegaMekLabMainUI> editors = new ArrayList<>();
-
     private final ReopenTabStack closedEditors = new ReopenTabStack();
-
-    // Replace the existing JTabbedPane with our enhanced version
     private final EnhancedTabbedPane tabs;
-
+    private CrossProcessTabManager crossProcessTabManager;
     private final MenuBar menuBar;
 
     /**
@@ -110,6 +112,40 @@ public class MegaMekLabTabbedUI extends JFrame implements MenuBarOwner, ChangeLi
                 }
             }
         });
+        tabs.setTabDetachmentHandler((pane, tabIndex, component, locationOnScreen) -> {
+            if (component instanceof MegaMekLabMainUI) {
+                // Handle cross-process tab transfer
+                MegaMekLabMainUI mainUI = (MegaMekLabMainUI) component;
+                Rectangle ghostBounds = new Rectangle(locationOnScreen.x, locationOnScreen.y, 400, 300);
+                // Try to offer this tab to other processes
+                try {
+                    Boolean accepted = crossProcessTabManager
+                            .offerTabAndWaitForAcceptance(mainUI, ghostBounds, 1000).get();
+                    if (accepted) {
+                        pane.remove(tabIndex);
+                        return true; // Return true if handled
+                    }
+                } catch (InterruptedException | ExecutionException e) {
+                    // If there's an error, just continue with default behavior
+                    return false;
+                }
+            }
+            return false; // Return false to use default behavior
+        });
+
+        crossProcessTabManager = new CrossProcessTabManager(this);
+        crossProcessTabManager.start();
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentMoved(ComponentEvent e) {
+                updateCrossProcessManagerBounds();
+            }
+
+            @Override
+            public void componentResized(ComponentEvent e) {
+                updateCrossProcessManagerBounds();
+            }
+        });
 
         // Add initial tabs
         for (MegaMekLabMainUI e : entities) {
@@ -137,6 +173,21 @@ public class MegaMekLabTabbedUI extends JFrame implements MenuBarOwner, ChangeLi
         addWindowListener(new ExitOnWindowClosingListener(this));
         setExtendedState(CConfig.getIntParam(CConfig.GUI_FULLSCREEN));
 
+    }
+
+    /**
+     * Updates the bounds of the cross-process tab manager to match the current
+     * window size and position.
+     */
+    private void updateCrossProcessManagerBounds() {
+        if (crossProcessTabManager != null && isShowing()) {
+            try {
+                Rectangle bounds = getBounds();
+                crossProcessTabManager.updateWindowBounds(bounds);
+            } catch (Exception e) {
+                // Ignore, window might not be fully initialized
+            }
+        }
     }
 
     /**
@@ -398,7 +449,9 @@ public class MegaMekLabTabbedUI extends JFrame implements MenuBarOwner, ChangeLi
         if (!exitPrompt()) {
             return false;
         }
-
+        if (crossProcessTabManager != null) {
+            crossProcessTabManager.stop();
+        }
         CConfig.setParam(CConfig.GUI_FULLSCREEN, Integer.toString(getExtendedState()));
         CConfig.setParam(CConfig.GUI_PLAF, UIManager.getLookAndFeel().getClass().getName());
         CConfig.writeMainUiWindowSettings(this);

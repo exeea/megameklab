@@ -41,6 +41,7 @@ import megameklab.ui.PopupMessages;
 import megameklab.ui.StartupGUI;
 import megameklab.ui.dialog.UiLoader;
 import megameklab.util.CConfig;
+import megameklab.util.SingleInstanceService;
 import megameklab.util.UnitPrintManager;
 import megameklab.util.UnitUtil;
 
@@ -49,8 +50,72 @@ public class MegaMekLab {
     private static final MMLOptions mmlOptions = new MMLOptions();
     private static final SanityInputFilter sanityInputFilter = new SanityInputFilter();
     private static final MMLogger logger = MMLogger.create(MegaMekLab.class);
+    private static SingleInstanceService singleInstanceService;
+    private static final String APPLICATION_ID = "MegaMekLab-Instance";
+    private static boolean multiInstanceMode;
+    private static boolean noStartup;
 
     public static void main(String... args) {
+        multiInstanceMode = hasArgument(args, "--multi");
+        noStartup = hasArgument(args, "--no-startup");
+        // Filter out the --multi argument from args for later processing
+        String[] filteredArgs = filterArguments(args, new String[] { "--multi", "--no-startup" });
+
+        // Skip single instance check if in multi-instance mode
+        if (!multiInstanceMode) {
+            // Initialize single instance service
+            singleInstanceService = new SingleInstanceService(APPLICATION_ID);
+
+            boolean isFirstInstance = singleInstanceService.register();
+
+            if (!isFirstInstance) {
+                // Another instance is running, send arguments and exit
+                logger.info("Another instance of MegaMekLab is already running");
+
+                if (filteredArgs.length >= 1) {
+                    if (noStartup) {
+                        singleInstanceService.sendMessage("NO_STARTUP_FILE=" + filteredArgs[0]);
+                    } else {
+                        singleInstanceService.sendMessage("FILE="+filteredArgs[0]);
+                    }
+                } else {
+                    singleInstanceService.sendMessage("ACTIVATE");
+                }
+
+                System.exit(0);
+                return;
+            }
+
+            // Message handler
+            singleInstanceService.setMessageHandler(message -> {
+                logger.info("Received command from another instance: {}", message);
+
+                SwingUtilities.invokeLater(() -> {
+                    if ("ACTIVATE".equals(message)) {
+                        bringWindowsToFront();
+                    } else
+                    if (message.startsWith("NO_STARTUP_FILE=")) {
+                        String filePath = message.substring("NO_STARTUP_FILE=".length());
+                        openUnitFile(filePath, true);
+                    } else if (message.startsWith("FILE=")) {
+                        String filePath = message.substring("FILE=".length());
+                        openUnitFile(filePath, false);
+                    } else {
+                        logger.error("Unknown command: {}", message);
+                    }
+                });
+            });
+
+            // Add shutdown hook to clean up resources
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                if (singleInstanceService != null) {
+                    singleInstanceService.cleanup();
+                }
+            }));
+        } else {
+            logger.info("Starting in multi-instance mode (--multi argument detected)");
+        }
+
         ObjectInputFilter.Config.setSerialFilter(sanityInputFilter);
 
         Sentry.init(options -> {
@@ -76,10 +141,59 @@ public class MegaMekLab {
         MegaMek.initializeSuiteGraphicalSetups(MMLConstants.PROJECT_NAME);
         ToolTipManager.sharedInstance().setDismissDelay(1000000);
         ToolTipManager.sharedInstance().setReshowDelay(50);
-        startup(args);
+        startup(filteredArgs);
 
         // log jvm parameters
         logger.info(ManagementFactory.getRuntimeMXBean().getInputArguments());
+    }
+
+    /**
+     * Check if arguments contains specific argument
+     * 
+     * @param args Command line arguments
+     * @param arg  Argument to check for
+     * @return True if the argument exists in the command line arguments, false
+     * 
+     */
+    private static boolean hasArgument(String[] args, String arg) {
+        for (String argument : args) {
+            if (arg.equals(argument)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Removes a specific argument from the command line arguments
+     * 
+     * @param args Command line arguments
+     * @return Filtered arguments
+     */
+    private static String[] filterArgument(String[] args, String arg) {
+        return java.util.Arrays.stream(args)
+                .filter(argument -> !arg.equals(argument))
+                .toArray(String[]::new);
+    }
+
+    /**
+     * Removes specific arguments from the command line arguments
+     * 
+     * @param args          Command line arguments
+     * @param argsToRemove  Arguments to remove
+     * @return Filtered arguments
+     */
+    private static String[] filterArguments(String[] args, String[] argsToRemove) {
+        return java.util.Arrays.stream(args)
+                .filter(argument -> {
+                    for (String arg : argsToRemove) {
+                        if (arg.equals(argument)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                })
+                .toArray(String[]::new);
     }
 
     public static void initializeLogging(final String originProject) {
@@ -109,33 +223,8 @@ public class MegaMekLab {
         updateGuiScaling(); // also sets the look-and-feel
 
         if (args.length >= 1) {
-            try {
-                var name = args[0];
-                logger.info("Trying to open file {}", name);
-                if (name.toLowerCase().endsWith(".blk") || name.endsWith(".mtf")) {
-                    var file = new File(name);
-                    Entity e = new MekFileParser(file).getEntity();
-                    if (!UnitUtil.validateUnit(e).isBlank()) {
-                        PopupMessages.showUnitInvalidWarning(null, UnitUtil.validateUnit(e));
-                    }
-                    UiLoader.loadUi(e, file.toString());
-                    return;
-                } else if (name.toLowerCase().endsWith(".mul")) {
-                    Runnable printMul = () -> {
-                        var frame = new JFrame();
-                        UnitPrintManager.printMUL(frame,  CConfig.getBooleanParam(CConfig.MISC_MUL_OPEN_BEHAVIOUR), new File(name));
-                        frame.dispose();
-                    };
-                    if (args.length >= 2 && args[1].equals("--no-startup")) {
-                        printMul.run();
-                        return;
-                    } else {
-                        SwingUtilities.invokeLater(printMul);
-                    }
-                }
-            } catch (Exception e) {
-                logger.warn(e);
-            }
+            String name = args[0];
+            openUnitFile(name, noStartup);
         }
 
         // Create a startup frame and display it
@@ -182,6 +271,60 @@ public class MegaMekLab {
 
     public static MMLOptions getMMLOptions() {
         return mmlOptions;
+    }
+
+    /**
+     * Brings a visible window to the front. This is called when the user
+     * switches to MegaMekLab from another application.
+     */
+    private static void bringWindowsToFront() {
+        logger.info("Bringing windows to front");
+        // Frame[] frames = Frame.getFrames();
+        // for (Frame frame : frames) {
+        // if (frame.isVisible()) {
+        // // Restore if minimized
+        // if ((frame instanceof JFrame) &&
+        // (((JFrame) frame).getState() == Frame.ICONIFIED)) {
+        // ((JFrame) frame).setState(Frame.NORMAL);
+        // }
+        // frame.toFront();
+        // frame.requestFocus();
+        // }
+        // }
+    }
+
+    /**
+     * Opens a unit file. This method is called when the user opens a file from
+     * the file menu or when a file is passed as an argument to the program.
+     *
+     * @param filePath
+     */
+    private static void openUnitFile(String filePath, boolean noStartup) {
+        try {
+            if (filePath.toLowerCase().endsWith(".blk") || filePath.endsWith(".mtf")) {
+                File file = new File(filePath);
+                Entity e = new MekFileParser(file).getEntity();
+                if (!UnitUtil.validateUnit(e).isBlank()) {
+                    PopupMessages.showUnitInvalidWarning(null, UnitUtil.validateUnit(e));
+                }
+                UiLoader.loadUi(e, file.toString());
+            } else if (filePath.toLowerCase().endsWith(".mul")) {
+                Runnable printMul = () -> {
+                    var frame = new JFrame();
+                    UnitPrintManager.printMUL(frame, CConfig.getBooleanParam(CConfig.MISC_MUL_OPEN_BEHAVIOUR),
+                            new File(filePath));
+                    frame.dispose();
+                };
+                if (noStartup) {
+                    printMul.run();
+                    return;
+                } else {
+                    SwingUtilities.invokeLater(printMul);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error processing file: " + filePath, e);
+        }
     }
 
     /**

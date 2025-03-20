@@ -54,6 +54,9 @@ ext {
 dependencies {
     implementation "org.megamek:megamek${mmBranchTag}:${version}"
 
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.18.2'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.18.2'
+
     implementation 'jakarta.xml.bind:jakarta.xml.bind-api:4.0.2'
 
     implementation 'org.apache.logging.log4j:log4j-core:2.24.3'
