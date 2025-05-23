@@ -361,7 +361,10 @@ public class StartupGUI extends SkinnedJPanel implements MenuBarOwner {
 
         // Now draw the tip on top
         if (splash != null && splash.isVisible() && splash.getWidth() > 0 && splash.getHeight() > 0) {
-            tipOfTheDay.drawTipOfTheDay((Graphics2D) g, splash.getBounds(), TipOfTheDay.Position.BOTTOM_BORDER);
+            Rectangle bounds = splash.getBounds();
+            bounds.x = bounds.x + 5; // TODO: I have no idea why but the splash screen is reporting wrong bounds, might need to fix that
+            bounds.width = bounds.width - 10;
+            tipOfTheDay.drawTipOfTheDay((Graphics2D) g, bounds, TipOfTheDay.Position.BOTTOM_BORDER);
         }
     }
 
