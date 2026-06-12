@@ -42,6 +42,8 @@ import java.io.IOException;
 import java.lang.System;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.text.NumberFormat;
 import java.util.*;
 import javax.xml.parsers.DocumentBuilder;
@@ -733,6 +735,8 @@ public class SVGMassPrinter {
         public List<String> published; // Source(s) where the record sheet has been published, e.g. ["RS:AS"]
         public boolean canon; // True if the unit is canon, false if is not (e.g. alt-universe or april fools units)
         public String role; // Role, "Assault", "Scout", etc.
+        public String calcRole;
+        public String calcRoleScores;
         public String armorType; // Armor Type
         public String structureType; // Internal Structure Type
         public int armor; // Total armor
@@ -1164,6 +1168,8 @@ public class SVGMassPrinter {
             this.published = splitSourceList(entity.getPublished());
             this.canon = !entity.isNonCanonBySource();
             this.role = formatRole(entity);
+            this.calcRole = calculateRole(entity);
+            this.calcRoleScores = calculateRoleScores(entity);
             this.armorType = getArmorType(entity);
             this.structureType = getStructureType(entity);
             int maxArmor = UnitUtil.getMaximumArmorPoints(entity);
@@ -1672,6 +1678,36 @@ public class SVGMassPrinter {
             }
         }
 
+        private String calculateRole(Entity entity) {
+            UnitRole role = UnitRole.bestRoleFor(entity);
+            if (role != UnitRole.UNDETERMINED) {
+                return role.toString();
+            } else {
+                return "None";
+            }
+        }
+
+        private String calculateRoleScores(Entity entity) {
+            if (!ASConverter.canConvert(entity)) {
+                return UnitRole.NONE + ":0";
+            }
+
+            AlphaStrikeElement element = ASConverter.convert(entity);
+            if (element == null) {
+                return UnitRole.NONE + ":0";
+            }
+
+            DecimalFormat scoreFormat = new DecimalFormat("0.##", DecimalFormatSymbols.getInstance(Locale.ROOT));
+            return Arrays.stream(UnitRole.values())
+                  .filter(role -> (role != UnitRole.UNDETERMINED) && role.isAvailableTo(element))
+                  .map(role -> new AbstractMap.SimpleEntry<>(role, role.roleScore(element)))
+                  .filter(entry -> entry.getValue() > -999_999)
+                  .sorted(Map.Entry.<UnitRole, Double>comparingByValue().reversed()
+                        .thenComparing(entry -> entry.getKey().toString()))
+                  .map(entry -> entry.getKey() + ":" + scoreFormat.format(entry.getValue()))
+                  .collect(Collectors.joining("|"));
+        }
+
         private String getArmorType(Entity entity) {
             if (entity instanceof ConvInfantry infantry) {
                 EquipmentType armor = infantry.getArmorKit();
@@ -2102,6 +2138,7 @@ public class SVGMassPrinter {
                     String desc = quirksBundle.getString("QuirksInfo.option." + key + ".description");
                     desc = filterQuirkDescription(desc);
                     Map<String, String> entry = new HashMap<>();
+                    entry.put("key", key);
                     entry.put("name", name);
                     entry.put("description", desc);
                     entry.put("type", "positive");
@@ -2116,6 +2153,7 @@ public class SVGMassPrinter {
                     String desc = quirksBundle.getString("QuirksInfo.option." + key + ".description");
                     desc = filterQuirkDescription(desc);
                     Map<String, String> entry = new HashMap<>();
+                    entry.put("key", key);
                     entry.put("name", name);
                     entry.put("description", desc);
                     entry.put("type", "negative");
