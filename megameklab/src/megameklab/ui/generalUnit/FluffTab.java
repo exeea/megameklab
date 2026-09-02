@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2018-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMekLab.
  *
@@ -92,6 +92,7 @@ public class FluffTab extends ITab implements FocusListener {
     private final JButton btnSetFluffImage = new JButton("Set Fluff Image from File");
     private final JButton btnImportFluffImage = new JButton("Import Fluff Image from Unit");
     private final JButton btnRemoveFluff = new JButton("Remove Fluff Image");
+    private final JCheckBox chkUnique = new JCheckBox();
 
     private final JLabel lblFluffImage = new JLabel();
     private final JScrollPane imgScrollPane = new JScrollPane(lblFluffImage);
@@ -153,6 +154,17 @@ public class FluffTab extends ITab implements FocusListener {
 
         btnRemoveFluff.addActionListener(evt -> removeFluffImage());
         panLeft.add(btnRemoveFluff, gbcLeft);
+        gbcLeft.gridy++;
+
+        chkUnique.setText(resourceMap.getString("FluffTab.chkUnique"));
+        chkUnique.setSelected(getEntity().isUnique());
+        chkUnique.addActionListener(evt -> {
+            getEntity().setUnique(chkUnique.isSelected());
+            if (refresh != null) {
+                refresh.refreshPreview();
+            }
+        });
+        panLeft.add(chkUnique, gbcLeft);
         gbcLeft.gridy++;
 
         // Add some space between buttons and text areas
@@ -558,6 +570,7 @@ public class FluffTab extends ITab implements FocusListener {
      */
     public void commitChanges() {
         EntityFluff fluff = getFluff();
+        getEntity().setUnique(chkUnique.isSelected());
         fluff.setCapabilities(txtCapabilities.getText());
         fluff.setOverview(txtOverview.getText());
         fluff.setDeployment(txtDeployment.getText());
@@ -729,6 +742,7 @@ public class FluffTab extends ITab implements FocusListener {
         }
 
         EntityFluff fluff = getFluff();
+        chkUnique.setSelected(getEntity().isUnique());
 
         // Update all text areas
         txtCapabilities.setText(fluff.getCapabilities());
