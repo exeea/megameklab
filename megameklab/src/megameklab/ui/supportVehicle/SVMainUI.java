@@ -302,7 +302,7 @@ public class SVMainUI extends MegaMekLabMainUI implements BFSLinkedEditor {
 
         if (null == oldEntity) {
             newUnit.setChassis("New");
-            newUnit.setModel("Support Tank");
+            newUnit.setModel("Support Vehicle");
             newUnit.setYear(3145);
             newUnit.setStructuralTechRating(TechRating.D);
             newUnit.setArmorTechRating(TechRating.D);

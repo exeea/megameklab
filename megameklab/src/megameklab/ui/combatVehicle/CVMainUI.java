@@ -284,7 +284,7 @@ public class CVMainUI extends MegaMekLabMainUI implements BFSLinkedEditor {
         }
         if (null == oldEntity) {
             newUnit.setChassis("New");
-            newUnit.setModel("Tank");
+            newUnit.setModel("Combat Vehicle");
             newUnit.setYear(3145);
         } else {
             copyUnitBasics(newUnit, oldEntity);
