@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2009-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMekLab.
  *
@@ -284,7 +284,7 @@ public class CVMainUI extends MegaMekLabMainUI implements BFSLinkedEditor {
         }
         if (null == oldEntity) {
             newUnit.setChassis("New");
-            newUnit.setModel("Tank");
+            newUnit.setModel("Combat Vehicle");
             newUnit.setYear(3145);
         } else {
             copyUnitBasics(newUnit, oldEntity);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2024-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMekLab.
  *
@@ -307,14 +307,14 @@ public class MegaMekLabTabbedUI extends JFrame implements MenuBarOwner, ChangeLi
     private JPopupMenu createNewUnitPopupMenu() {
         JPopupMenu menu = new JPopupMenu();
         menu.add(newUnitItem("New Mek", Entity.ETYPE_MEK, false));
+        menu.add(newUnitItem("New Combat Vehicle", Entity.ETYPE_TANK, false));
+        menu.add(newUnitItem("New Support Vehicle", Entity.ETYPE_SUPPORT_TANK, false));
+        menu.add(newUnitItem("New ProtoMek", Entity.ETYPE_PROTOMEK, false));
+        menu.add(newUnitItem("New Battle Armor", Entity.ETYPE_BATTLEARMOR, false));
+        menu.add(newUnitItem("New Conventional Infantry", Entity.ETYPE_INFANTRY, false));
         menu.add(newUnitItem("New Fighter", Entity.ETYPE_AERO, false));
         menu.add(newUnitItem("New DropShip/Small Craft", Entity.ETYPE_DROPSHIP, false));
         menu.add(newUnitItem("New Advanced Aerospace", Entity.ETYPE_JUMPSHIP, false));
-        menu.add(newUnitItem("New Tank", Entity.ETYPE_TANK, false));
-        menu.add(newUnitItem("New Support Vehicle", Entity.ETYPE_SUPPORT_TANK, false));
-        menu.add(newUnitItem("New Battle Armor", Entity.ETYPE_BATTLEARMOR, false));
-        menu.add(newUnitItem("New Conventional Infantry", Entity.ETYPE_INFANTRY, false));
-        menu.add(newUnitItem("New ProtoMek", Entity.ETYPE_PROTOMEK, false));
         menu.add(newUnitItem("New Handheld Weapon", Entity.ETYPE_HANDHELD_WEAPON, false));
         menu.add(newUnitItem("New Gun Emplacement", Entity.ETYPE_GUN_EMPLACEMENT, false));
         menu.add(newUnitItem("New Battlefield Support Asset", Entity.ETYPE_BATTLEFIELD_SUPPORT_ASSET, false));
