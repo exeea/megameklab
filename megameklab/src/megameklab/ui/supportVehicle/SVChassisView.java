@@ -87,9 +87,16 @@ public class SVChassisView extends BuildView implements ActionListener, ChangeLi
     }
 
     /** Subset of possible types that does not include those that are not yet supported */
-    private final List<TestSupportVehicle.SVType> SV_TYPES = Arrays.stream(TestSupportVehicle.SVType.values())
-          .filter(t -> !t.equals(TestSupportVehicle.SVType.AIRSHIP)
-                && !t.equals(TestSupportVehicle.SVType.SATELLITE)).toList();
+    private final List<TestSupportVehicle.SVType> SV_TYPES = List.of(
+          TestSupportVehicle.SVType.WHEELED,
+          TestSupportVehicle.SVType.TRACKED,
+          TestSupportVehicle.SVType.HOVERCRAFT,
+          TestSupportVehicle.SVType.VTOL,
+          TestSupportVehicle.SVType.WIGE,
+          TestSupportVehicle.SVType.FIXED_WING,
+          TestSupportVehicle.SVType.NAVAL,
+          TestSupportVehicle.SVType.RAIL
+    );
     private final Map<TestSupportVehicle.SVType, String> typeNames = new EnumMap<>(TestSupportVehicle.SVType.class);
 
     private final static TechAdvancement TA_DUAL_TURRET = Tank.getDualTurretTA();
