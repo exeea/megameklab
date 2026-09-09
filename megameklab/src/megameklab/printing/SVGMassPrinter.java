@@ -33,18 +33,27 @@
 
 package megameklab.printing;
 
+import static megamek.common.equipment.EquipmentType.T_ARMOR_STANDARD;
+import static megamek.common.equipment.WeaponType.DAMAGE_ARTILLERY;
+import static megamek.common.equipment.WeaponType.DAMAGE_BY_CLUSTER_TABLE;
+import static megamek.common.equipment.WeaponType.DAMAGE_SPECIAL;
+import static megamek.common.equipment.WeaponType.DAMAGE_VARIABLE;
+
 import java.awt.print.PageFormat;
-import java.math.BigDecimal;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.PrintStream;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.lang.System;
+import java.io.PrintStream;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.NumberFormat;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import javax.swing.JComponent;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -69,37 +78,37 @@ import megamek.client.ui.tileset.MMStaticDirectoryManager;
 import megamek.client.ui.tileset.MekTileset;
 import megamek.client.ui.util.FluffImageHelper;
 import megamek.common.*;
+import megamek.common.actions.ClubAttackAction;
+import megamek.common.actions.KickAttackAction;
 import megamek.common.alphaStrike.ASDamageVector;
 import megamek.common.alphaStrike.ASSpecialAbilityCollection;
+import megamek.common.alphaStrike.ASUnitType;
+import megamek.common.alphaStrike.AlphaStrikeElement;
 import megamek.common.alphaStrike.AlphaStrikeHelper;
+import megamek.common.alphaStrike.conversion.ASConverter;
+import megamek.common.annotations.Nullable;
 import megamek.common.battleArmor.BattleArmor;
-import megamek.common.battlefieldSupport.BattlefieldSupportAsset;
 import megamek.common.battleArmor.BattleArmorHandles;
+import megamek.common.battlefieldSupport.BattlefieldSupportAsset;
 import megamek.common.bays.BattleArmorBay;
 import megamek.common.bays.Bay;
 import megamek.common.bays.InfantryBay;
 import megamek.common.bays.ProtoMekBay;
+import megamek.common.enums.Faction;
+import megamek.common.enums.WeaponSortOrder;
 import megamek.common.equipment.*;
 import megamek.common.equipment.enums.MiscTypeFlag;
 import megamek.common.loaders.MekSummary;
 import megamek.common.loaders.MekSummaryCache;
-import megamek.common.units.*;
-import megamek.common.actions.ClubAttackAction;
-import megamek.common.actions.KickAttackAction;
-import megamek.common.alphaStrike.ASUnitType;
-import megamek.common.alphaStrike.AlphaStrikeElement;
-import megamek.common.alphaStrike.conversion.ASConverter;
-import megamek.common.annotations.Nullable;
-import megamek.common.enums.Faction;
-import megamek.common.enums.WeaponSortOrder;
 import megamek.common.options.IOption;
 import megamek.common.options.IOptionGroup;
 import megamek.common.options.OptionsConstants;
 import megamek.common.options.Quirks;
+import megamek.common.units.*;
 import megamek.common.util.UnitRulesRefUtil;
-import megamek.common.verifier.TestProtoMek;
 import megamek.common.verifier.TestEntity;
 import megamek.common.verifier.TestInfantry;
+import megamek.common.verifier.TestProtoMek;
 import megamek.common.weapons.autoCannons.RACWeapon;
 import megamek.common.weapons.autoCannons.UACWeapon;
 import megamek.common.weapons.bayWeapons.BayWeapon;
@@ -123,16 +132,6 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.w3c.dom.svg.SVGDocument;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.ForkJoinPool;
-import java.util.stream.Collectors;
-
-import static megamek.common.equipment.EquipmentType.T_ARMOR_STANDARD;
-import static megamek.common.equipment.WeaponType.DAMAGE_ARTILLERY;
-import static megamek.common.equipment.WeaponType.DAMAGE_BY_CLUSTER_TABLE;
-import static megamek.common.equipment.WeaponType.DAMAGE_SPECIAL;
-import static megamek.common.equipment.WeaponType.DAMAGE_VARIABLE;
 
 /**
  * @author drake
@@ -2432,7 +2431,7 @@ public class SVGMassPrinter {
                 switch (arg) {
                     case "-h", "--help" -> {
                         printUsage();
-                        System.exit(0);
+                        java.lang.System.exit(0);
                     }
                     case "-o", "--output", "--root" -> {
                         ROOT_FOLDER = inlineValue != null ? inlineValue : requireArgumentValue(args, ++i);
@@ -2580,13 +2579,13 @@ public class SVGMassPrinter {
         final int barWidth = 40;
         int filled = (percent * barWidth) / 100;
         String bar = "=".repeat(filled) + " ".repeat(barWidth - filled);
-        long elapsed = System.currentTimeMillis() - startMillis;
+        long elapsed = java.lang.System.currentTimeMillis() - startMillis;
         long eta = (done > 0) ? (elapsed * (total - (long) done)) / done : 0;
-        System.out.printf("\r[%s] %3d%% (%d/%d) elapsed %s ETA %s   ",
+        java.lang.System.out.printf("\r[%s] %3d%% (%d/%d) elapsed %s ETA %s   ",
               bar, percent, done, total, formatDuration(elapsed), formatDuration(eta));
-        System.out.flush();
+        java.lang.System.out.flush();
         if (done >= total) {
-            System.out.println();
+            java.lang.System.out.println();
         }
     }
 
@@ -2624,12 +2623,12 @@ public class SVGMassPrinter {
               """.formatted(ROOT_FOLDER, SHEETS_DIR, UNIT_FILES_DIR, TYPEFACE,
               SKIP_SVG, SKIP_UNITS, SKIP_EQUIPMENT, SKIP_UNIT_FILES,
               !SKIP_DETAILED_CALCULATIONS, EXPORT_CALCULATIONS_AS_TEXT);
-        System.out.println(usage);
+        java.lang.System.out.println(usage);
     }
 
     public static void main(String[] args) {
         if (!parseArgs(args)) {
-            System.exit(1);
+            java.lang.System.exit(1);
         }
         logger.info("Starting SVG Mass Printer...");
         final String rootPath = ROOT_FOLDER + File.separator + SHEETS_DIR;
@@ -2651,7 +2650,7 @@ public class SVGMassPrinter {
         if (!sheetsDir.exists() || !sheetsDir.isDirectory()) {
             if (!sheetsDir.mkdirs()) {
                 logger.error("Failed to create sheets directory: {}", sheetsDir.getPath());
-                System.exit(1);
+                java.lang.System.exit(1);
             } else {
                 logger.info("Sheets directory created: {}", sheetsDir.getPath());
             }
@@ -2681,7 +2680,7 @@ public class SVGMassPrinter {
             if (!unitFilesDir.exists() || !unitFilesDir.isDirectory()) {
                 if (!unitFilesDir.mkdirs()) {
                     logger.error("Failed to create unit files directory: {}", unitFilesDir.getPath());
-                    System.exit(1);
+                    java.lang.System.exit(1);
                 } else {
                     logger.info("Unit files directory created: {}", unitFilesDir.getPath());
                 }
@@ -2709,7 +2708,7 @@ public class SVGMassPrinter {
         ObjectMapper mapper = new ObjectMapper();
         mapper.disable(SerializationFeature.INDENT_OUTPUT);
         mapper.getFactory().configure(StreamWriteFeature.WRITE_BIGDECIMAL_AS_PLAIN.mappedFeature(), true);
-        long timestamp = System.currentTimeMillis();
+        long timestamp = java.lang.System.currentTimeMillis();
         Map<String, Entity> uniqueUnitTypes = new ConcurrentHashMap<>();
 
         RecordSheetOptions recordSheetOptions = getRecordSheetOptions();
@@ -2722,12 +2721,12 @@ public class SVGMassPrinter {
         } else {
             if (UNIT_FILE_OVERRIDES.isEmpty()) {
                 logger.error("--units was specified but no valid .blk/.mtf files were found.");
-                System.exit(1);
+                java.lang.System.exit(1);
             }
             meks = loadSummariesFromOverrides();
             if (meks.length == 0) {
                 logger.error("No valid units could be loaded from the supplied unit files.");
-                System.exit(1);
+                java.lang.System.exit(1);
             }
             logger.info("Processing {} meks from {} supplied unit file(s)...", meks.length,
                   UNIT_FILE_OVERRIDES.size());
@@ -2741,7 +2740,7 @@ public class SVGMassPrinter {
         final AtomicInteger progressCounter = new AtomicInteger(0);
         final AtomicInteger lastReportedPercent = new AtomicInteger(-1);
         final int totalUnits = meks.length;
-        final long progressStart = System.currentTimeMillis();
+        final long progressStart = java.lang.System.currentTimeMillis();
         int parallelism = ForkJoinPool.getCommonPoolParallelism();
         logger.info("Starting parallel processing with {} threads...", parallelism);
 
@@ -3028,7 +3027,7 @@ public class SVGMassPrinter {
             }
         }
 
-        System.exit(0);
+        java.lang.System.exit(0);
     }
 
     static Map<String, Object> equipmentDataForExport(EquipmentType equipmentType) {
