@@ -122,7 +122,7 @@ public class PrintBuilding extends PrintEntity {
         setTextField(TITLE, getRecordSheetTitle().toUpperCase());
         setTextField(TYPE, building.getShortNameRaw(), true);
         setTextField("levels", building.getBldgClass() == IBuilding.BRIDGE ? "Decks: " + BuildingConstruction.mapLevels(building).stream()
-              .map(BuildingUtil::levelLabel).collect(Collectors.joining(",")) : Integer.toString(building.getInternalBuilding().getBuildingHeight()));
+              .map(level -> BuildingUtil.levelLabel(building, level)).collect(Collectors.joining(",")) : Integer.toString(building.getInternalBuilding().getBuildingHeight()));
         setTextField(MP_WALK, "0");
         if (!building.isClan() && !building.isMixedTech()) {
             hideElement("techClanCheck");
@@ -136,8 +136,7 @@ public class PrintBuilding extends PrintEntity {
               .map(Mounted::getName).distinct().collect(Collectors.joining(", "));
         setTextField("powerplant", BuildingConstruction.hasNoInterior(building) || BuildingConstruction.usesHexsides(building)
               ? "NA" : generators.isBlank() ? "External supply" : generators, true);
-        var crew = BuildingConstruction.crew(building);
-        setTextField("buildingCrew", Integer.toString(crew.total()));
+        setTextField("buildingCrew", Integer.toString(building.getNCrew()));
         if (showPilotInfo()) {
             setTextField("buildingGunnery", Integer.toString(building.getCrew().getGunnery()));
         }
@@ -305,7 +304,7 @@ public class PrintBuilding extends PrintEntity {
                 }
             }
             text(layer, width * scale, height * scale + 10, width * scale,
-                  "Level: " + BuildingUtil.levelLabel(level), 7, "end", "bold");
+                  "Level: " + BuildingUtil.levelLabel(building, level), 7, "end", "bold");
         }
         if (!symbols.isEmpty()) {
             Element key = element((Element) region.getParentNode(), "g", "class", "building-map-key", "transform",
@@ -454,7 +453,7 @@ public class PrintBuilding extends PrintEntity {
             entries.add(note("tunnel", "Tunnel construction", "All"));
         }
         if (design.isOpenSpace()) {
-            entries.add(note("open-space", "Open-space: 600 t total; ground equipment", "All"));
+            entries.add(note("open-space", "Open-space: 600 t total; lowest floor equipment", "All"));
         }
         if (BuildingConstruction.usesHexsides(building)) {
             entries.add(note("hexsides", "CF / armor / capacity apply per hexside", "All"));
@@ -486,7 +485,7 @@ public class PrintBuilding extends PrintEntity {
                         sides.add(BuildingUtil.facingLabel(side));
                     }
                 }
-                String level = exit.getKey() == building.getInternalBuilding().getBuildingHeight() ? "Roof" : BuildingUtil.levelLabel(exit.getKey());
+                String level = BuildingUtil.roofLevelLabel(building, exit.getKey());
                 entries.add(note("elevator-stop", "Lift access: " + String.join(", ", sides), hex + "/" + level));
             });
             entries.add(note("elevator-current", "Current elevator level: ______", hex));

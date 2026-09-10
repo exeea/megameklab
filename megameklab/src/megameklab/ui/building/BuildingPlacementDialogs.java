@@ -25,6 +25,7 @@ import megamek.common.bays.Bay;
 import megamek.common.equipment.Mounted;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
+import megamek.common.units.BuildingEntity;
 import megameklab.util.BuildingUtil;
 
 /** Location editors display sheet coordinates; native cube coordinates never need to be entered by hand. */
@@ -56,12 +57,12 @@ final class BuildingPlacementDialogs {
                 position = java.util.Optional.of(anchor);
             }
             model.addRow(new Object[] { position.isPresent(), grid.label(hex),
-                  BuildingUtil.levelLabel(position.map(BuildingDesign.Position::level).orElse(editor.selectedFloor())) });
+                  BuildingUtil.levelLabel(entity, position.map(BuildingDesign.Position::level).orElse(editor.selectedFloor())) });
         }
         JTable table = new JTable(model);
         JComboBox<String> floors = new JComboBox<>();
         for (int floor = entity.getInternalBuilding().getBuildingHeight() - 1; floor >= 0; floor--) {
-            floors.addItem(BuildingUtil.levelLabel(floor));
+            floors.addItem(BuildingUtil.levelLabel(entity, floor));
         }
         table.getColumnModel().getColumn(2).setCellEditor(new DefaultCellEditor(floors));
         JPanel panel = tablePanel(table, "One item, with its mass divided evenly across the selected hexes. Include its primary hex/floor.");
@@ -71,7 +72,7 @@ final class BuildingPlacementDialogs {
             List<BuildingDesign.Position> positions = new ArrayList<>();
             for (int row = 0; row < model.getRowCount(); row++) {
                 if (Boolean.TRUE.equals(model.getValueAt(row, 0))) {
-                    positions.add(new BuildingDesign.Position(hexes.get(row), floor(model.getValueAt(row, 2).toString())));
+                    positions.add(new BuildingDesign.Position(hexes.get(row), floor(entity, model.getValueAt(row, 2).toString())));
                 }
             }
             if (positions.equals(List.of(anchor))) {
@@ -170,7 +171,7 @@ final class BuildingPlacementDialogs {
         for (int floor = height; floor >= 0; floor--) {
             int mask = old == null ? internalSides : old.exits().getOrDefault(floor, 0);
             model.addRow(new Object[] { old == null ? floor < height : old.exits().containsKey(floor),
-                  floor == height ? "Roof" : BuildingUtil.levelLabel(floor), (mask & 1) != 0, (mask & 2) != 0,
+                  BuildingUtil.roofLevelLabel(entity, floor), (mask & 1) != 0, (mask & 2) != 0,
                   (mask & 4) != 0, (mask & 8) != 0, (mask & 16) != 0, (mask & 32) != 0 });
         }
         JTable table = new JTable(model);
@@ -222,7 +223,7 @@ final class BuildingPlacementDialogs {
         }
     }
 
-    static int floor(String text) {
-        return "G".equals(text) ? 0 : Integer.parseInt(text);
+    static int floor(BuildingEntity entity, String text) {
+        return Math.toIntExact(("G".equals(text) ? 0 : Long.parseLong(text)) - BuildingConstruction.baseLevel(entity));
     }
 }

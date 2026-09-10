@@ -133,6 +133,9 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         }
         refreshing = true;
         getEntity().getDesign().removeDeletedComponents(getEntity());
+        int crewSize = megamek.common.compute.Compute.getFullCrewSize(getEntity());
+        getEntity().getCrew().setSize(crewSize);
+        getEntity().getCrew().setCurrentSize(crewSize);
         refreshLocationSelector();
         structure.refresh();
         equipment.refresh();
@@ -175,8 +178,8 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         });
         floorSelector.addActionListener(e -> {
             if (!selecting && floorSelector.getSelectedItem() != null) {
-                String floor = floorSelector.getSelectedItem().toString();
-                selectLocation(selectedHex, "G".equals(floor) ? 0 : Integer.parseInt(floor));
+                selectLocation(selectedHex, getEntity().getInternalBuilding().getBuildingHeight()
+                      - 1 - floorSelector.getSelectedIndex());
             }
         });
         return panel;
@@ -204,12 +207,12 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         boolean bridge = getEntity().getBldgClass() == megamek.common.units.IBuilding.BRIDGE;
         floorSelector.setEnabled(!bridge);
         if (bridge) {
-            floorSelector.addItem("Deck " + BuildingUtil.levelLabel(getEntity().getDesign().bridgeDeck(selectedHex)));
+            floorSelector.addItem("Deck " + BuildingUtil.levelLabel(getEntity(), getEntity().getDesign().bridgeDeck(selectedHex)));
         } else {
             for (int floor = height - 1; floor >= 0; floor--) {
-                floorSelector.addItem(BuildingUtil.levelLabel(floor));
+                floorSelector.addItem(BuildingUtil.levelLabel(getEntity(), floor));
             }
-            floorSelector.setSelectedItem(BuildingUtil.levelLabel(selectedFloor));
+            floorSelector.setSelectedItem(BuildingUtil.levelLabel(getEntity(), selectedFloor));
         }
         selecting = false;
     }

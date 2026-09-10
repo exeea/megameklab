@@ -71,12 +71,12 @@ public final class BuildingUtil {
         return entity;
     }
 
-    public static String levelLabel(int level) {
-        return level == 0 ? "G" : Integer.toString(level);
+    public static String levelLabel(long level) {
+        return level == 0 ? "G" : Long.toString(level);
     }
 
     public static String levelLabel(BuildingEntity entity, int level) {
-        return levelLabel(BuildingConstruction.baseLevel(entity) + level);
+        return levelLabel((long) BuildingConstruction.baseLevel(entity) + level);
     }
 
     public static String roofLevelLabel(BuildingEntity entity, int level) {

@@ -74,6 +74,100 @@ import org.junit.jupiter.params.provider.ValueSource;
 @ExtendWith(InitializeTypes.class)
 class BuildingMainUITest {
     @Test
+    void crewControlsUseTheGameCalculationAndPreserveAnExplicitCount() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        building.addEquipment(EquipmentType.get("ISMediumLaser"), 0);
+        var reference = new AtomicReference<BuildingMainUI>();
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = new BuildingMainUI(building, "crew-test.blk");
+            reference.set(editor);
+            editor.onActivated();
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = reference.get();
+            var automatic = (JCheckBox) find(editor, "Use minimum operating crew");
+            var count = (JSpinner) find(editor, "Building crew count");
+            assertTrue(automatic.isSelected());
+            assertEquals(building.calculateMinimumCrew(), count.getValue());
+            automatic.doClick();
+            count.setValue(17);
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = reference.get();
+            assertEquals(17, editor.getEntity().getNCrew());
+            assertEquals(17, editor.getEntity().getCrew().getCurrentSize());
+            ((JCheckBox) find(editor, "Use minimum operating crew")).doClick();
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            assertFalse(reference.get().getEntity().hasExplicitCrewCount());
+        });
+    }
+
+    @Test
+    void groundReferenceControlsRelabelFloorsWithoutChangingEditingLocationsAndSupportUndo() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.FORTRESS, 4, 80, 0, List.of(CubeCoords.ZERO));
+        building.addEquipment(EquipmentType.get("ISMediumLaser"), 1);
+        var reference = new AtomicReference<BuildingMainUI>();
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = new BuildingMainUI(building, "ground-reference.blk");
+            reference.set(editor);
+            editor.onActivated();
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = reference.get();
+            var automatic = (JCheckBox) find(editor, "Automatic floor numbering");
+            var base = (JSpinner) find(editor, "Lowest floor level");
+            assertTrue(automatic.isSelected());
+            assertFalse(base.isEnabled());
+            automatic.doClick();
+            base.setValue(-2);
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = reference.get();
+            var selector = (JComboBox<?>) find(editor, "Edit floor");
+            assertEquals(List.of("1", "G", "-1", "-2"), java.util.stream.IntStream.range(0, selector.getItemCount())
+                  .mapToObj(selector::getItemAt).toList());
+            assertEquals(0, editor.selectedLocation());
+            selector.setSelectedItem("-1");
+            assertEquals(1, editor.selectedLocation());
+            assertEquals(1, ((JTable) find(editor, "Building equipment")).getRowCount());
+            selector.setSelectedItem("G");
+            assertEquals(2, editor.selectedLocation());
+            assertEquals(0, ((JTable) find(editor, "Building equipment")).getRowCount());
+            assertEquals(2, BuildingPlacementDialogs.floor(editor.getEntity(), "G"));
+            assertEquals(1, BuildingPlacementDialogs.floor(editor.getEntity(), "-1"));
+            render(editor, "building-ground-reference", 1300, 950);
+            assertTrue(editor.hasUndo());
+            editor.undo();
+            assertNull(editor.getEntity().getDesign().getBaseLevel());
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = reference.get();
+            editor.redo();
+            assertEquals(-2, editor.getEntity().getDesign().getBaseLevel());
+            assertEquals(1, editor.getEntity().getEquipment().getFirst().getLocation());
+            ((JCheckBox) find(editor, "Automatic floor numbering")).doClick();
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = reference.get();
+            assertNull(editor.getEntity().getDesign().getBaseLevel());
+            assertFalse(((JSpinner) find(editor, "Lowest floor level")).isEnabled());
+            editor.getEntity().getDesign().setSite(BuildingDesign.Site.UNDERGROUND);
+            editor.refreshAll();
+            assertEquals(-5, ((JSpinner) find(editor, "Lowest floor level")).getValue());
+            assertEquals("-2", ((JComboBox<?>) find(editor, "Edit floor")).getItemAt(0));
+        });
+    }
+
+    @Test
     void coordinateCheckboxHandlesNegativeHexesWithoutChangingLocationsOrSheetLabels() throws Exception {
         var building = BuildingUtil.newBuilding();
         var negative = new CubeCoords(-10, -10, 20);

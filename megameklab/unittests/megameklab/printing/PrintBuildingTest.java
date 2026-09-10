@@ -329,6 +329,29 @@ class PrintBuildingTest {
     }
 
     @Test
+    void sheetsPrintGroundRelativeFloorsInDescendingOrderAndKeepNativeLocations() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.FORTRESS, 4, 80, 0, List.of(CubeCoords.ZERO));
+        building.getDesign().setBaseLevel(-2);
+        building.addEquipment(EquipmentType.get("ISMediumLaser"), 1);
+        var sheet = sheet(building, PaperSize.ISO_A4);
+        assertTrue(sheet.createDocument(0, pageFormat(PaperSize.ISO_A4), true));
+        var layers = elements(sheet, "g", "building-map-layer");
+        assertEquals(List.of("3", "2", "1", "0"), layers.stream().map(e -> e.getAttribute("data-building-floor")).toList());
+        assertEquals(List.of("1", "G", "-1", "-2"), layers.stream()
+              .map(e -> e.getTextContent().substring(e.getTextContent().lastIndexOf("Level: ") + 7)).toList());
+        assertTrue(elements(sheet, "g", "building-inventory-entry").stream()
+              .anyMatch(row -> row.getTextContent().contains("0504/-1") && row.getAttribute("data-location").equals("1")));
+        render(sheet, "building-ground-reference");
+        building.getDesign().setBaseLevel(null);
+        building.getDesign().setSite(BuildingDesign.Site.UNDERGROUND);
+        building.getDesign().setDepth(1);
+        sheet = sheet(building, PaperSize.ISO_A4);
+        assertTrue(sheet.createDocument(0, pageFormat(PaperSize.ISO_A4), true));
+        assertTrue(elements(sheet, "g", "building-map-layer").getLast().getTextContent().contains("Level: -5"));
+    }
+
+    @Test
     void rulesAtriumExampleRetainsItsEmptyCenterAndUniformHeightThroughBlkAndPrinting() throws Exception {
         // TO:AR p. 128: a Medium Standard mall, CF 40, six hexes around an open atrium, three levels tall.
         var building = BuildingUtil.newBuilding();

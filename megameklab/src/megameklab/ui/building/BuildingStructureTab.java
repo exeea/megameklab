@@ -101,6 +101,9 @@ class BuildingStructureTab extends JPanel implements BuildListener {
     private final JComboBox<String> buildingClass = new JComboBox<>(new String[] {
           "Standard", "Hangar", "Fortress", "Gun Emplacement", "Castles Brian", "Tent", "Wall", "Fence", "Bridge" });
     private final JSpinner levels = new JSpinner(new SpinnerNumberModel(1, 1, 100, 1));
+    private final JSpinner baseLevel = new JSpinner(new SpinnerNumberModel(0, null, null, 1));
+    private final JCheckBox automaticBaseLevel = new JCheckBox("Automatic from site");
+    private final JLabel baseLevelLabel;
     private final JSpinner cf = new JSpinner(new SpinnerNumberModel(40, 1, 1000, 1));
     private final JSpinner armor = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
     private final JLabel cfLabel;
@@ -141,7 +144,15 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         addField(fields, "Building type", type);
         addField(fields, "Classification", buildingClass);
         addField(fields, "Levels (ground = G)", levels).setText("Levels:");
-        levels.setToolTipText("Number of levels, starting at ground (G / level 0).");
+        levels.setToolTipText("Number of floors. Set their numbering with Lowest floor level.");
+        JPanel floorNumbering = new JPanel(new GridLayout(0, 1, 0, 4));
+        baseLevel.setName("Lowest floor level");
+        baseLevel.setToolTipText("0 = G; -2 numbers the floors -2, -1, G, 1… This sets labels, not construction height.");
+        automaticBaseLevel.setName("Automatic floor numbering");
+        automaticBaseLevel.setToolTipText("Surface floors start at G. Underground/underwater floors use roof cover depth.");
+        floorNumbering.add(baseLevel);
+        floorNumbering.add(automaticBaseLevel);
+        baseLevelLabel = addField(fields, "Lowest floor level (0 = G)", floorNumbering);
         cfLabel = addField(fields, "CF per hex", cf);
         armorLabel = addField(fields, "Armor points per hex", armor);
         var fieldWidth = new GridBagConstraints();
@@ -289,6 +300,8 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         type.addActionListener(e -> applySettings());
         buildingClass.addActionListener(e -> applySettings());
         levels.addChangeListener(e -> applySettings());
+        baseLevel.addChangeListener(e -> applyFloorNumbering());
+        automaticBaseLevel.addActionListener(e -> applyFloorNumbering());
         cf.addChangeListener(e -> applySettings());
         armor.addChangeListener(e -> applySettings());
         refresh();
@@ -335,6 +348,11 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         buildingClass.setSelectedIndex(entity().getBldgClass() >= 0 && entity().getBldgClass() < buildingClass.getItemCount()
               ? entity().getBldgClass() : -1);
         levels.setValue(entity().getInternalBuilding().getBuildingHeight());
+        baseLevel.setValue(BuildingConstruction.baseLevel(entity()));
+        automaticBaseLevel.setSelected(entity().getDesign().getBaseLevel() == null);
+        baseLevel.setEnabled(!automaticBaseLevel.isSelected());
+        baseLevelLabel.setVisible(entity().getBldgClass() != IBuilding.BRIDGE);
+        baseLevel.getParent().setVisible(entity().getBldgClass() != IBuilding.BRIDGE);
         cf.setValue(entity().getInternalBuilding().getCurrentCF(CubeCoords.ZERO));
         armor.setValue(entity().getInternalBuilding().getArmor(CubeCoords.ZERO));
         cfLabel.setText(BuildingConstruction.usesHexsides(entity()) ? "CF per hexside:" : "CF per hex:");
@@ -372,7 +390,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         type.setEnabled(entity().getBldgClass() != IBuilding.TENT && entity().getBldgClass() != IBuilding.FENCE);
         absoluteCoordinates.setSelected(editor.absoluteCoordinates());
         selection.setText("Editing: " + editor.hexLabel(editor.selectedHex()) + "/"
-              + BuildingUtil.levelLabel(displayedLevel(editor.selectedHex())));
+              + BuildingUtil.levelLabel(entity(), displayedLevel(editor.selectedHex())));
         remove.setEnabled(entity().getInternalBuilding().getCoordsList().size() > 1);
         var features = EnumSet.noneOf(BuildingMap.Feature.class);
         entity().getInternalBuilding().getCoordsList().forEach(hex -> features.addAll(BuildingMap.features(entity(), hex, displayedLevel(hex))));
@@ -399,6 +417,13 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                 refreshing = false;
             }
             configure(List.copyOf(entity().getInternalBuilding().getCoordsList()));
+        }
+    }
+
+    private void applyFloorNumbering() {
+        if (!refreshing) {
+            entity().getDesign().setBaseLevel(automaticBaseLevel.isSelected() ? null : (Integer) baseLevel.getValue());
+            editor.scheduleRefresh();
         }
     }
 
@@ -533,7 +558,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                 String symbols = features.stream().filter(feature -> !feature.glyph.isBlank()).map(feature -> feature.glyph)
                       .collect(java.util.stream.Collectors.joining(" "));
                 String coordinate = editor.absoluteCoordinates() ? BuildingUtil.absoluteHexLabel(hex) : labels.label(hex);
-                String text = occupied ? (symbols.isEmpty() ? "" : symbols + " ") + coordinate + "/" + BuildingUtil.levelLabel(displayedLevel) : "+";
+                String text = occupied ? (symbols.isEmpty() ? "" : symbols + " ") + coordinate + "/" + BuildingUtil.levelLabel(entity(), displayedLevel) : "+";
                 var font = g.getFont();
                 int textWidth = g.getFontMetrics().stringWidth(text);
                 if (occupied && textWidth > size * 1.6) {

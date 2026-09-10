@@ -52,6 +52,7 @@ import javax.swing.SpinnerNumberModel;
 import javax.swing.table.AbstractTableModel;
 
 import megamek.common.equipment.enums.StructureEngine;
+import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
 import megameklab.util.BuildingUtil;
@@ -63,12 +64,14 @@ class BuildingSystemsTab extends JPanel {
     private final JCheckBox heavyMetal = new JCheckBox("Heavy-metal superstructure");
     private final JCheckBox officers = new JCheckBox("Include officers for civilian operations");
     private final JCheckBox tunnel = new JCheckBox("Tunnel construction");
-    private final JCheckBox openSpace = new JCheckBox("Open-space construction (600 t total; ground equipment only)");
+    private final JCheckBox openSpace = new JCheckBox("Open-space construction (600 t total; lowest floor equipment only)");
     private final JCheckBox roofClearance = new JCheckBox("Roof has clearance in a larger cave");
     private final JComboBox<String> ceiling = new JComboBox<>(new String[] { "Standard", "High", "Low" });
     private final JComboBox<String> site = new JComboBox<>(new String[] { "Surface", "Underground", "Underwater" });
     private final JSpinner depth = new JSpinner(new SpinnerNumberModel(1, 1, 1000, 1));
     private final JSpinner combatHours = new JSpinner(new SpinnerNumberModel(0, 0, 24, 1));
+    private final JCheckBox minimumCrew = new JCheckBox("Use minimum operating crew", true);
+    private final JSpinner crewCount = new JSpinner(new SpinnerNumberModel(0, 0, Integer.MAX_VALUE, 1));
     private final JTextArea report = new JTextArea();
     private final Doors doors = new Doors();
     private final JTable doorTable = new JTable(doors);
@@ -120,6 +123,11 @@ class BuildingSystemsTab extends JPanel {
         JPanel planning = new JPanel();
         planning.add(new JLabel("Fuel planning — expected combat hours per day:"));
         planning.add(combatHours);
+        minimumCrew.setName("Use minimum operating crew");
+        crewCount.setName("Building crew count");
+        planning.add(minimumCrew);
+        planning.add(new JLabel("Crew:"));
+        planning.add(crewCount);
         totals.add(planning, BorderLayout.NORTH);
         report.setEditable(false);
         report.setName("Building construction report");
@@ -140,6 +148,16 @@ class BuildingSystemsTab extends JPanel {
         site.addActionListener(e -> apply());
         depth.addChangeListener(e -> apply());
         combatHours.addChangeListener(e -> refreshReport());
+        minimumCrew.addActionListener(e -> applyCrew());
+        crewCount.addChangeListener(e -> applyCrew());
+    }
+
+    private void applyCrew() {
+        if (!refreshing) {
+            editor.getEntity().setCrewCount(minimumCrew.isSelected()
+                  ? AbstractBuildingEntity.CREW_FROM_MINIMUM_CREW_TABLE : (int) crewCount.getValue());
+            editor.scheduleRefresh();
+        }
     }
 
     private JPanel doorPanel() {
@@ -237,6 +255,9 @@ class BuildingSystemsTab extends JPanel {
         site.setSelectedIndex(design.getSite().ordinal());
         depth.setValue(design.getDepth());
         depth.setEnabled(design.getSite() != BuildingDesign.Site.SURFACE);
+        minimumCrew.setSelected(!entity.hasExplicitCrewCount());
+        crewCount.setValue(entity.getNCrew());
+        crewCount.setEnabled(entity.hasExplicitCrewCount());
         BuildingPlacementDialogs.stopEditing(doorTable);
         JComboBox<String> locations = new JComboBox<>();
         for (int loc = 0; loc < entity.locations(); loc++) {
@@ -251,7 +272,7 @@ class BuildingSystemsTab extends JPanel {
 
     private void refreshReport() {
         var entity = editor.getEntity();
-        var crew = BuildingConstruction.crew(entity);
+        var crew = entity.calculateMinimumCrewRequirements();
         var hexes = entity.getInternalBuilding().getOriginalCoordsList();
         var grid = BuildingUtil.sheetGrid(hexes);
         StringBuilder text = new StringBuilder("PER-HEX CAPACITY (all floors combined)\n");
@@ -261,8 +282,11 @@ class BuildingSystemsTab extends JPanel {
             text.append("%s   Installed %9.2f t   Capacity %9.2f t   Free %9.2f t%n".formatted(
                   grid.label(hex), installed, capacity, capacity - installed));
         }
-        text.append("%nOPERATING CREW%nCrew: %d   Gunners: %d   Officers: %d   Total: %d%n".formatted(
+        text.append("%nMINIMUM OPERATING CREW%nCrew: %d   Gunners: %d   Officers: %d   Total: %d%n".formatted(
               crew.crew(), crew.gunners(), crew.officers(), crew.total()));
+        if (entity.hasExplicitCrewCount()) {
+            text.append("Crew specified in unit file: %d%n".formatted(entity.getNCrew()));
+        }
         text.append("Quarters are optional; staff may commute. Automated weapons use Gunnery 5.\n");
         text.append("%nHEAT & POWER%nEnergy weapon heat: %d   Heat dissipation: %d%n".formatted(
               BuildingConstruction.energyHeat(entity), BuildingConstruction.heatDissipation(entity)));
@@ -372,8 +396,8 @@ class BuildingSystemsTab extends JPanel {
             return switch (column) {
                 case 0 -> BuildingUtil.sheetGrid(editor.getEntity().getInternalBuilding().getOriginalCoordsList()).label(lift.hex());
                 case 1 -> lift.capacity();
-                case 2 -> lift.exits().keySet().stream().sorted().map(level -> level == editor.getEntity().getInternalBuilding().getBuildingHeight()
-                      ? "Roof" : BuildingUtil.levelLabel(level)).collect(java.util.stream.Collectors.joining(", "));
+                case 2 -> lift.exits().keySet().stream().sorted().map(level -> BuildingUtil.roofLevelLabel(editor.getEntity(), level))
+                      .collect(java.util.stream.Collectors.joining(", "));
                 default -> lift.weight();
             };
         }

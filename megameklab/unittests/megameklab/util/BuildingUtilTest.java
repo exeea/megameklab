@@ -57,6 +57,51 @@ class BuildingUtilTest {
     private static final CubeCoords EAST = new CubeCoords(1, 0, -1);
 
     @Test
+    void groundReferenceRoundTripsWithoutMovingEquipmentDoorsOrElevators() throws Exception {
+        var entity = BuildingUtil.newBuilding();
+        BuildingUtil.configure(entity, BuildingType.HEAVY, IBuilding.FORTRESS, 4, 80, 0, List.of(CubeCoords.ZERO));
+        entity.addEquipment(EquipmentType.get("ISMediumLaser"), 1);
+        entity.getDesign().getDoors().add(new BuildingDesign.Door(new BuildingDesign.Position(CubeCoords.ZERO, 2), 0, 1));
+        entity.getDesign().getElevators().add(new BuildingDesign.Elevator(CubeCoords.ZERO, 20, Map.of(0, 0, 1, 0, 2, 0, 3, 0, 4, 0)));
+        entity.getDesign().setBaseLevel(-2);
+        var block = BLKFile.getBlock(entity);
+        assertTrue(List.of(block.getDataAsString("building_options")).contains("base_level=-2"));
+        var loaded = (BuildingEntity) new BLKStructureFile(block).getEntity();
+        assertEquals(-2, loaded.getDesign().getBaseLevel());
+        assertEquals(List.of("0504/-2", "0504/-1", "0504/G", "0504/1"), java.util.stream.IntStream.range(0, 4)
+              .mapToObj(loc -> BuildingUtil.locationLabel(loaded, loc)).toList());
+        assertEquals(1, loaded.getEquipment().getFirst().getLocation());
+        assertEquals(entity.getDesign().getDoors(), loaded.getDesign().getDoors());
+        assertEquals(entity.getDesign().getElevators(), loaded.getDesign().getElevators());
+        assertEquals("Roof (2)", BuildingUtil.roofLevelLabel(loaded, 4));
+        assertEquals(entity.getWeight(), loaded.getWeight());
+    }
+
+    @Test
+    void automaticSubsurfaceNumberingUsesRoofCoverAndAnExplicitZeroOverridesIt() throws Exception {
+        var entity = BuildingUtil.newBuilding();
+        BuildingUtil.configure(entity, BuildingType.HEAVY, IBuilding.FORTRESS, 3, 80, 0, List.of(CubeCoords.ZERO));
+        assertEquals(0, BuildingConstruction.baseLevel(entity));
+        for (var site : List.of(BuildingDesign.Site.UNDERGROUND, BuildingDesign.Site.UNDERWATER)) {
+            entity.getDesign().setSite(site);
+            entity.getDesign().setDepth(2);
+            var loaded = (BuildingEntity) new BLKStructureFile(BLKFile.getBlock(entity)).getEntity();
+            assertNull(loaded.getDesign().getBaseLevel());
+            assertEquals(-5, BuildingConstruction.baseLevel(loaded));
+            assertEquals("0504/-5", BuildingUtil.locationLabel(loaded, 0));
+            assertEquals("Roof (-2)", BuildingUtil.roofLevelLabel(loaded, 3));
+        }
+        entity.getDesign().setBaseLevel(0);
+        var loaded = (BuildingEntity) new BLKStructureFile(BLKFile.getBlock(entity)).getEntity();
+        assertEquals(0, loaded.getDesign().getBaseLevel());
+        assertEquals("0504/G", BuildingUtil.locationLabel(loaded, 0));
+        loaded.getDesign().setBaseLevel(null);
+        assertEquals(-5, BuildingConstruction.baseLevel(loaded));
+        loaded.getDesign().setSite(BuildingDesign.Site.SURFACE);
+        assertEquals(0, BuildingConstruction.baseLevel(loaded));
+    }
+
+    @Test
     void centersSingleHexAndPreservesAdjacencyAcrossColumnParity() {
         assertEquals("0504", BuildingUtil.sheetGrid(List.of(CubeCoords.ZERO)).label(CubeCoords.ZERO));
         List<CubeCoords> hexes = List.of(CubeCoords.ZERO, EAST, new CubeCoords(-1, 0, 1));
