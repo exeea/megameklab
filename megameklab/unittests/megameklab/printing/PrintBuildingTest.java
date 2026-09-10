@@ -1,7 +1,36 @@
 /*
  * Copyright (C) 2026 The MegaMek Team. All Rights Reserved.
- * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This file is part of MegaMekLab.
+ *
+ * MegaMekLab is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License (GPL),
+ * version 3 or (at your option) any later version,
+ * as published by the Free Software Foundation.
+ *
+ * MegaMekLab is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty
+ * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * A copy of the GPL should have been included with this project;
+ * if not, see <https://www.gnu.org/licenses/>.
+ *
+ * NOTICE: The MegaMek organization is a non-profit group of volunteers
+ * creating free software for the BattleTech community.
+ *
+ * MechWarrior, BattleMech, `Mech and AeroTech are registered trademarks
+ * of The Topps Company, Inc. All Rights Reserved.
+ *
+ * Catalyst Game Labs and the Catalyst Game Labs logo are trademarks of
+ * InMediaRes Productions, LLC.
+ *
+ * MechWarrior Copyright Microsoft Corporation. MegaMek was created under
+ * Microsoft's "Game Content Usage Rules"
+ * <https://www.xbox.com/en-US/developers/rules> and it is not endorsed by or
+ * affiliated with Microsoft.
  */
+
 package megameklab.printing;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -21,6 +50,7 @@ import megamek.common.board.CubeCoords;
 import megamek.common.bays.FirstClassQuartersCargoBay;
 import megamek.common.enums.BuildingType;
 import megamek.common.equipment.EquipmentType;
+import megamek.common.equipment.MiscType;
 import megamek.common.loaders.BLKFile;
 import megamek.common.loaders.BLKStructureFile;
 import megamek.common.units.BuildingEntity;
@@ -39,9 +69,68 @@ import org.apache.logging.log4j.core.config.Configurator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.w3c.dom.Element;
+import org.w3c.dom.svg.SVGPolygonElement;
+import org.w3c.dom.svg.SVGGElement;
+import org.w3c.dom.svg.SVGRectElement;
 
 @ExtendWith(InitializeTypes.class)
 class PrintBuildingTest {
+    @Test
+    void fitsTheStandardGridBeforeMakingWideOrTallFootprintsDenserWithinTheMapArea() throws Exception {
+        var tight = java.util.stream.IntStream.range(0, 14)
+              .mapToObj(i -> new CubeCoords(i / 7, i % 7, -i / 7 - i % 7)).toList();
+        var wide = java.util.stream.IntStream.range(0, 13)
+              .mapToObj(q -> new CubeCoords(q, -q / 2, -q + q / 2)).toList();
+        var tall = java.util.stream.IntStream.range(0, 12).mapToObj(r -> new CubeCoords(0, r, -r)).toList();
+        var both = new ArrayList<>(wide.subList(0, 11));
+        both.addAll(tall.subList(1, 9));
+        var footprints = List.of(tight, wide, tall, both);
+        int[] cells = { 9 * 7, 13 * 7, 9 * 12, 11 * 9 };
+        for (var paper : List.of(PaperSize.US_LETTER, PaperSize.ISO_A4)) {
+            double standardHexWidth = 0;
+            for (int index = 0; index < footprints.size(); index++) {
+                var hexes = footprints.get(index);
+                var building = BuildingUtil.newBuilding();
+                BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.CASTLE_BRIAN, 2, 40, 0, hexes);
+                var mount = building.addEquipment(EquipmentType.get("ISMediumLaser"), (hexes.size() - 1) * 2);
+                var sheet = sheet(building, paper);
+                assertTrue(sheet.createDocument(0, pageFormat(paper), true));
+                assertEquals(cells[index] * 2, elements(sheet, "polygon", "building-hex").size());
+                assertEquals(hexes.size() * 2, elements(sheet, "polygon", "occupied").size());
+                var region = (SVGRectElement) sheet.getSVGDocument().getElementById("structureMap");
+                for (var element : elements(sheet, "g", "building-map-layer")) {
+                    var layer = (SVGGElement) element;
+                    var translation = layer.getTransform().getBaseVal().consolidate().getMatrix();
+                    var polygons = layer.getElementsByTagName("polygon");
+                    for (int i = 0; i < polygons.getLength(); i++) {
+                        var points = ((SVGPolygonElement) polygons.item(i)).getPoints();
+                        for (int j = 0; j < points.getNumberOfItems(); j++) {
+                            double x = translation.getE() + points.getItem(j).getX();
+                            double y = translation.getF() + points.getItem(j).getY();
+                            assertTrue(x >= region.getX().getBaseVal().getValue() - .01);
+                            assertTrue(x <= region.getX().getBaseVal().getValue() + region.getWidth().getBaseVal().getValue() + .01);
+                            assertTrue(y >= region.getY().getBaseVal().getValue() - .01);
+                            assertTrue(y <= region.getY().getBaseVal().getValue() + region.getHeight().getBaseVal().getValue() + .01);
+                        }
+                    }
+                }
+                var points = ((SVGPolygonElement) elements(sheet, "polygon", "building-hex").getFirst()).getPoints();
+                double hexWidth = points.getItem(3).getX() - points.getItem(0).getX();
+                if (index == 0) {
+                    standardHexWidth = hexWidth;
+                    assertTrue(elements(sheet, "g", "building-inventory-entry").getFirst().getTextContent().contains("0607/G"));
+                } else {
+                    assertTrue(hexWidth < standardHexWidth, "A larger grid uses smaller hexes in the same map area");
+                }
+                assertEquals(hexes, building.getInternalBuilding().getOriginalCoordsList());
+                assertEquals((hexes.size() - 1) * 2, mount.getLocation());
+                if (paper == PaperSize.US_LETTER && (index == 0 || index == 3)) {
+                    render(sheet, "building-fit-grid-" + index);
+                }
+            }
+        }
+    }
+
     @Test
     void printsWallSidesAndOnlyTheActualBridgeDeckElevations() throws Exception {
         var building = BuildingUtil.newBuilding();
@@ -102,6 +191,98 @@ class PrintBuildingTest {
                 return "../../mm-data/data/images/recordsheets/" + size.dirName;
             }
         };
+    }
+
+    @Test
+    void compressesBeforeOverflowAndKeepsAllEquipmentOnContinuationPages() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        for (int index = 0; index < 30; index++) {
+            building.addEquipment(printableItem(index), 0);
+        }
+        var compact = sheet(building, PaperSize.US_LETTER);
+        assertEquals(1, compact.getPageCount());
+        assertTrue(compact.createDocument(0, pageFormat(PaperSize.US_LETTER), true));
+        render(compact, "building-dense-inventory");
+        for (int index = 30; index < 110; index++) {
+            building.addEquipment(printableItem(index), 0);
+        }
+        var overflow = sheet(building, PaperSize.US_LETTER);
+        assertTrue(overflow.getPageCount() > 1);
+        var seen = new ArrayList<String>();
+        for (int page = 0; page < overflow.getPageCount(); page++) {
+            assertTrue(overflow.createDocument(page, pageFormat(PaperSize.US_LETTER), true));
+            for (var entry : elements(overflow, "g", "building-inventory-entry")) {
+                assertEquals(0, entry.getElementsByTagName("line").getLength(), "No ruled inventory placeholders");
+                if (Integer.parseInt(entry.getAttribute("data-location")) >= 0) {
+                    seen.add(entry.getAttribute("data-equipment-id"));
+                }
+            }
+            render(overflow, "building-inventory-overflow-" + page);
+        }
+        assertEquals(110, seen.size());
+        assertEquals(110, new java.util.HashSet<>(seen).size());
+    }
+
+    private MiscType printableItem(int index) {
+        return new MiscType() {
+            {
+                name = "Equipment " + index;
+                setInternalName(name);
+                tonnage = 1;
+                criticalSlots = 1;
+            }
+        };
+    }
+
+    @Test
+    void projectedDoorsStayCenteredAndFeatureColorsRemainAlongsideSymbols() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        for (int side = 0; side < 6; side++) {
+            building.getDesign().getDoors().add(new BuildingDesign.Door(new BuildingDesign.Position(CubeCoords.ZERO, 0), side, 1));
+        }
+        var sheet = sheet(building, PaperSize.US_LETTER);
+        assertTrue(sheet.createDocument(0, pageFormat(PaperSize.US_LETTER), true));
+        var hex = (SVGPolygonElement) elements(sheet, "polygon", "occupied").getFirst();
+        var layer = elements(sheet, "g", "building-map-layer").getFirst();
+        var polygons = layer.getElementsByTagName("polygon");
+        int doors = 0;
+        for (int index = 0; index < polygons.getLength(); index++) {
+            var door = (SVGPolygonElement) polygons.item(index);
+            if (!door.getAttribute("data-building-symbol").equals("door")) {
+                continue;
+            }
+            doors++;
+            int side = Integer.parseInt(door.getAttribute("data-building-facing"));
+            var a = hex.getPoints().getItem((side + 1) % 6);
+            var b = hex.getPoints().getItem((side + 2) % 6);
+            var left = door.getPoints().getItem(1);
+            var right = door.getPoints().getItem(2);
+            var tip = door.getPoints().getItem(0);
+            assertEquals((a.getX() + b.getX()) / 2, (tip.getX() + left.getX() + right.getX()) / 3, .01);
+            assertEquals((a.getY() + b.getY()) / 2, (tip.getY() + left.getY() + right.getY()) / 3, .01);
+            assertEquals(0, (right.getX() - left.getX()) * (b.getY() - a.getY())
+                  - (right.getY() - left.getY()) * (b.getX() - a.getX()), .01);
+        }
+        assertEquals(6, doors);
+        var keyPolygons = elements(sheet, "g", "building-map-key").getFirst().getElementsByTagName("polygon");
+        assertEquals(1, keyPolygons.getLength(), "The Door legend has no hex swatch");
+        assertEquals(3, ((SVGPolygonElement) keyPolygons.item(0)).getPoints().getNumberOfItems());
+        render(sheet, "building-six-door-directions");
+        building.getDesign().getDoors().clear();
+        building.getDesign().getElevators().add(new BuildingDesign.Elevator(CubeCoords.ZERO, 20, Map.of(0, 4, 1, 4)));
+        for (var mode : RecordSheetOptions.ColorMode.values()) {
+            var colored = sheet(building, PaperSize.US_LETTER);
+            colored.options.setColor(mode);
+            assertTrue(colored.createDocument(0, pageFormat(PaperSize.US_LETTER), true));
+            assertTrue(elements(colored, "g", "building-map-layer").getFirst().getTextContent().contains("E0504"));
+            var key = elements(colored, "g", "building-map-key").getFirst();
+            assertTrue(key.getTextContent().contains("EElevator"));
+            assertEquals("#efcb8d", elements(colored, "polygon", "occupied").getFirst().getAttribute("fill"));
+            assertEquals("#efcb8d", ((Element) key.getElementsByTagName("polygon").item(0)).getAttribute("fill"));
+            if (mode == RecordSheetOptions.ColorMode.LOGO_ONLY) {
+                render(colored, "building-feature-colors");
+            }
+        }
     }
 
     private PageFormat pageFormat(PaperSize size) {
@@ -199,12 +380,13 @@ class PrintBuildingTest {
         assertEquals(6, elements(sheet, "g", "building-map-layer").size());
         assertEquals(List.of("7", "6", "5", "4", "3", "2"), elements(sheet, "g", "building-map-layer").stream()
               .map(e -> e.getAttribute("data-building-floor")).toList());
-        assertEquals(18, elements(sheet, "g", "building-inventory-entry").size());
+        assertEquals(24, elements(sheet, "g", "building-inventory-entry").stream()
+              .filter(row -> Integer.parseInt(row.getAttribute("data-location")) >= 0).count());
         render(sheet, "building-a4-six-layers");
         assertTrue(sheet.createDocument(1, pageFormat(PaperSize.ISO_A4), true));
         assertEquals(List.of("1", "0"), elements(sheet, "g", "building-map-layer").stream()
               .map(e -> e.getAttribute("data-building-floor")).toList());
-        assertEquals(6, elements(sheet, "g", "building-inventory-entry").size());
+        assertEquals(0, elements(sheet, "g", "building-inventory-entry").size());
         render(sheet, "building-a4-continuation");
     }
 
@@ -239,9 +421,12 @@ class PrintBuildingTest {
         var sheet = sheet(building, PaperSize.US_LETTER);
         assertTrue(sheet.createDocument(0, pageFormat(PaperSize.US_LETTER), true));
         var rows = elements(sheet, "g", "building-inventory-entry");
-        assertEquals(2, rows.size());
+        assertEquals(3, rows.size());
         assertTrue(rows.getFirst().getTextContent().contains("(27)"));
-        assertTrue(rows.getLast().getTextContent().contains("Quarters (20 t)"));
+        assertTrue(rows.get(1).getTextContent().contains("Quarters"));
+        // The name may wrap around a separate location cell in SVG document order.
+        assertTrue(rows.get(1).getTextContent().contains("(20"));
+        assertTrue(rows.get(1).getTextContent().contains("t)"));
         Path output = Path.of("build", "building-review", "building-letter.pdf");
         Files.createDirectories(output.getParent());
         Level fontLogLevel = LogManager.getLogger("org.apache.fop").getLevel();
@@ -290,13 +475,14 @@ class PrintBuildingTest {
         design.getElevators().add(new BuildingDesign.Elevator(CubeCoords.ZERO, 20, Map.of(0, 36, 1, 36, 2, 36, 3, 36)));
         assertTrue(BuildingUtil.constructionIssues(building).isEmpty(), BuildingUtil.constructionIssues(building).toString());
         var sheet = sheet(building, PaperSize.ISO_A4);
-        assertEquals(2, sheet.getPageCount());
+        assertEquals(1, sheet.getPageCount(), "Fit the complete service inventory before adding another page");
         assertEquals(3, sheet.inventoryGroups().get(1).size(), "Same equipment/hex/floor retains one quantity group");
         var text = new StringBuilder();
         for (int page = 0; page < sheet.getPageCount(); page++) {
             assertTrue(sheet.createDocument(page, pageFormat(PaperSize.ISO_A4), true));
             var rows = elements(sheet, "g", "building-inventory-entry");
-            assertTrue(rows.size() <= 18);
+            assertTrue(rows.size() > 18, "A full inventory is no longer limited to 18 rows");
+            assertFalse(elements(sheet, "g", "building-map-key").isEmpty());
             rows.forEach(row -> text.append(row.getTextContent()).append('\n'));
             render(sheet, "building-construction-details-" + (page + 1));
         }

@@ -94,7 +94,7 @@ public class InventoryWriter {
     /**
      * The minimum font size to use when scaling inventory text to fit into available space
      */
-    private static final float MIN_FONT_SIZE = 4.5f;
+    static final float MIN_FONT_SIZE = 4.5f;
     private static final float QUIRKS_FONT_SCALING = 0.9f;
     private static final float FOOTER_TEXT_WIDTH_RATIO = 0.95f;
 
@@ -661,7 +661,7 @@ public class InventoryWriter {
     static private final float INITIAL_LINE_SPACING = 1.2f; // the initial line spacing factor
     static private final float LINE_SPACING_REDUCTION_STEP = 0.01f; // tiny spacing steps avoid visual jumps
     static private final float FONT_SIZE_REDUCTION_STEP = 0.05f; // small steps keep font changes visually smooth
-    static private final float MIN_LINE_HEIGHT_TO_FONT_SIZE = 0.93f;
+    static final float MIN_LINE_HEIGHT_TO_FONT_SIZE = 0.93f;
     static private final float MAX_LINE_HEIGHT_TO_FONT_SIZE = 1.35f;
 
     /**
@@ -679,10 +679,16 @@ public class InventoryWriter {
 
     private float[] scaleText(double height, Function<Float, Integer> calcLines,
           Function<Float, Double> calcLinePadding) {
+        return scaleText(height, calcLines, calcLinePadding, sheet::getFontHeight);
+    }
+
+    /** Also used to plan continuation pages before a sheet's SVG drawing context exists. */
+    static float[] scaleText(double height, Function<Float, Integer> calcLines,
+          Function<Float, Double> calcLinePadding, Function<Float, Float> fontHeights) {
         float fontSize = FONT_SIZE_MEDIUM;
         while (true) {
-            double lineCount = scaledLineCount(fontSize, calcLines, calcLinePadding);
-            float fontHeight = sheet.getFontHeight(fontSize);
+            double lineCount = calcLines.apply(fontSize) + calcLinePadding.apply(fontSize);
+            float fontHeight = fontHeights.apply(fontSize);
             float minLineSpacing = minLineSpacing(fontSize, fontHeight);
             float maxLineSpacing = maxLineSpacing(fontSize, fontHeight, minLineSpacing);
 
@@ -702,25 +708,19 @@ public class InventoryWriter {
         }
     }
 
-    private boolean fits(double height, float fontHeight, double lineCount, float lineSpacing) {
+    private static boolean fits(double height, float fontHeight, double lineCount, float lineSpacing) {
         return (lineCount <= 0) || (fontHeight * lineSpacing * lineCount <= height);
     }
 
-    private float minLineSpacing(float fontSize, float fontHeight) {
+    private static float minLineSpacing(float fontSize, float fontHeight) {
         // One font size needs at least about one font-size of baseline distance. Convert that real distance to a factor.
         return fontSize * MIN_LINE_HEIGHT_TO_FONT_SIZE / fontHeight;
     }
 
-    private float maxLineSpacing(float fontSize, float fontHeight, float minLineSpacing) {
+    private static float maxLineSpacing(float fontSize, float fontHeight, float minLineSpacing) {
         // Small fonts should not get huge airy rows, so cap max spacing by the font's own size too.
         float fontSizedMaxSpacing = (fontSize * MAX_LINE_HEIGHT_TO_FONT_SIZE) / fontHeight;
         return Math.max(minLineSpacing, Math.min(INITIAL_LINE_SPACING, fontSizedMaxSpacing));
-    }
-
-    private double scaledLineCount(float fontSize, Function<Float, Integer> calcLines,
-          Function<Float, Double> calcLinePadding) {
-        // Most callers count whole rows. Inventory can also reserve half-row visual padding.
-        return calcLines.apply(fontSize) + calcLinePadding.apply(fontSize);
     }
 
     /**

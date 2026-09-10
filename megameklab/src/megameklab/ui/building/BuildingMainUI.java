@@ -1,7 +1,36 @@
 /*
  * Copyright (C) 2026 The MegaMek Team. All Rights Reserved.
- * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This file is part of MegaMekLab.
+ *
+ * MegaMekLab is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License (GPL),
+ * version 3 or (at your option) any later version,
+ * as published by the Free Software Foundation.
+ *
+ * MegaMekLab is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty
+ * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * A copy of the GPL should have been included with this project;
+ * if not, see <https://www.gnu.org/licenses/>.
+ *
+ * NOTICE: The MegaMek organization is a non-profit group of volunteers
+ * creating free software for the BattleTech community.
+ *
+ * MechWarrior, BattleMech, `Mech and AeroTech are registered trademarks
+ * of The Topps Company, Inc. All Rights Reserved.
+ *
+ * Catalyst Game Labs and the Catalyst Game Labs logo are trademarks of
+ * InMediaRes Productions, LLC.
+ *
+ * MechWarrior Copyright Microsoft Corporation. MegaMek was created under
+ * Microsoft's "Game Content Usage Rules"
+ * <https://www.xbox.com/en-US/developers/rules> and it is not endorsed by or
+ * affiliated with Microsoft.
  */
+
 package megameklab.ui.building;
 
 import java.awt.BorderLayout;
@@ -43,6 +72,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
     private CubeCoords selectedHex;
     private int selectedFloor;
     private boolean selecting;
+    private boolean absoluteCoordinates;
 
     public BuildingMainUI() {
         createNewUnit(Entity.ETYPE_BUILDING_ENTITY);
@@ -76,7 +106,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         preview.setFullAsyncMode(true);
         status = new JLabel();
         status.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
-        configPane.addTab("Structure", new TabScrollPane(structure));
+        configPane.addTab("Structure", structure);
         configPane.addTab("Equipment", equipment);
         configPane.addTab("Transport & Quarters", new TabScrollPane(transport));
         configPane.addTab("Construction & Services", systems);
@@ -168,8 +198,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         int height = getEntity().getInternalBuilding().getBuildingHeight();
         selectedFloor = Math.clamp(selectedFloor, 0, height - 1);
         hexSelector.removeAllItems();
-        var grid = BuildingUtil.sheetGrid(hexes);
-        hexes.forEach(hex -> hexSelector.addItem(grid.label(hex)));
+        hexes.forEach(hex -> hexSelector.addItem(hexLabel(hex)));
         hexSelector.setSelectedIndex(hexes.indexOf(selectedHex));
         floorSelector.removeAllItems();
         boolean bridge = getEntity().getBldgClass() == megamek.common.units.IBuilding.BRIDGE;
@@ -187,6 +216,21 @@ public class BuildingMainUI extends MegaMekLabMainUI {
 
     CubeCoords selectedHex() {
         return selectedHex == null ? CubeCoords.ZERO : selectedHex;
+    }
+
+    boolean absoluteCoordinates() {
+        return absoluteCoordinates;
+    }
+
+    void setAbsoluteCoordinates(boolean absolute) {
+        absoluteCoordinates = absolute;
+        refreshLocationSelector();
+        structure.refresh();
+    }
+
+    String hexLabel(CubeCoords hex) {
+        return absoluteCoordinates ? BuildingUtil.absoluteHexLabel(hex)
+              : BuildingUtil.sheetGrid(getEntity().getInternalBuilding().getOriginalCoordsList()).label(hex);
     }
 
     int selectedFloor() {

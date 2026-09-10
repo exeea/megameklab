@@ -1,7 +1,36 @@
 /*
  * Copyright (C) 2026 The MegaMek Team. All Rights Reserved.
- * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This file is part of MegaMekLab.
+ *
+ * MegaMekLab is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License (GPL),
+ * version 3 or (at your option) any later version,
+ * as published by the Free Software Foundation.
+ *
+ * MegaMekLab is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty
+ * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * A copy of the GPL should have been included with this project;
+ * if not, see <https://www.gnu.org/licenses/>.
+ *
+ * NOTICE: The MegaMek organization is a non-profit group of volunteers
+ * creating free software for the BattleTech community.
+ *
+ * MechWarrior, BattleMech, `Mech and AeroTech are registered trademarks
+ * of The Topps Company, Inc. All Rights Reserved.
+ *
+ * Catalyst Game Labs and the Catalyst Game Labs logo are trademarks of
+ * InMediaRes Productions, LLC.
+ *
+ * MechWarrior Copyright Microsoft Corporation. MegaMek was created under
+ * Microsoft's "Game Content Usage Rules"
+ * <https://www.xbox.com/en-US/developers/rules> and it is not endorsed by or
+ * affiliated with Microsoft.
  */
+
 package megameklab.util;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -38,6 +67,31 @@ class BuildingUtilTest {
             }
         }
         assertEquals("0504/G", BuildingUtil.locationLabel(BuildingUtil.newBuilding(), 0));
+    }
+
+    @Test
+    void fitsEitherColumnParityBeforeExpandingRegardlessOfTheAuthoredOrigin() {
+        var footprint = java.util.stream.IntStream.range(0, 14)
+              .mapToObj(i -> new CubeCoords(i / 7, i % 7, -i / 7 - i % 7)).toList();
+        for (var origin : List.of(CubeCoords.ZERO, new CubeCoords(-10, -10, 20),
+              new CubeCoords(37, -51, 14), new CubeCoords(-94, 63, 31))) {
+            var hexes = footprint.stream().map(hex -> hex.add(origin)).toList();
+            var grid = BuildingUtil.sheetGrid(hexes);
+            assertEquals(9, grid.columns());
+            assertEquals(7, grid.rows(), "Shifting one column fits this footprint without a denser grid");
+            assertEquals("0501", grid.label(hexes.getFirst()));
+            assertEquals("0607", grid.label(hexes.getLast()));
+            assertEquals("0504", BuildingUtil.sheetGrid(List.of(origin)).label(origin));
+            assertEquals(grid, BuildingUtil.sheetGrid(hexes.reversed()), "Input order must not affect placement");
+            for (var a : hexes) {
+                var position = grid.position(a);
+                assertTrue(position.getX() >= 0 && position.getX() < grid.columns());
+                assertTrue(position.getY() >= 0 && position.getY() < grid.rows());
+                for (var b : hexes) {
+                    assertEquals(a.toOffset().distance(b.toOffset()), position.distance(grid.position(b)));
+                }
+            }
+        }
     }
 
     @Test

@@ -1,10 +1,41 @@
 /*
  * Copyright (C) 2026 The MegaMek Team. All Rights Reserved.
- * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This file is part of MegaMekLab.
+ *
+ * MegaMekLab is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License (GPL),
+ * version 3 or (at your option) any later version,
+ * as published by the Free Software Foundation.
+ *
+ * MegaMekLab is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty
+ * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * A copy of the GPL should have been included with this project;
+ * if not, see <https://www.gnu.org/licenses/>.
+ *
+ * NOTICE: The MegaMek organization is a non-profit group of volunteers
+ * creating free software for the BattleTech community.
+ *
+ * MechWarrior, BattleMech, `Mech and AeroTech are registered trademarks
+ * of The Topps Company, Inc. All Rights Reserved.
+ *
+ * Catalyst Game Labs and the Catalyst Game Labs logo are trademarks of
+ * InMediaRes Productions, LLC.
+ *
+ * MechWarrior Copyright Microsoft Corporation. MegaMek was created under
+ * Microsoft's "Game Content Usage Rules"
+ * <https://www.xbox.com/en-US/developers/rules> and it is not endorsed by or
+ * affiliated with Microsoft.
  */
+
 package megameklab.util;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import megamek.common.CriticalSlot;
 import megamek.common.TechConstants;
@@ -44,6 +75,19 @@ public final class BuildingUtil {
         return level == 0 ? "G" : Integer.toString(level);
     }
 
+    public static String levelLabel(BuildingEntity entity, int level) {
+        return levelLabel(BuildingConstruction.baseLevel(entity) + level);
+    }
+
+    public static String roofLevelLabel(BuildingEntity entity, int level) {
+        return level == entity.getInternalBuilding().getBuildingHeight()
+              ? "Roof (" + levelLabel(entity, level) + ")" : levelLabel(entity, level);
+    }
+
+    public static String absoluteHexLabel(CubeCoords hex) {
+        return "%d,%d".formatted((int) hex.q(), (int) hex.r());
+    }
+
     public static String facingLabel(int facing) {
         return facing < 0 || facing >= FACINGS.size() ? "?" : FACINGS.get(facing);
     }
@@ -74,13 +118,19 @@ public final class BuildingUtil {
         int minQ = hexes.stream().mapToInt(c -> (int) c.q()).min().orElse(0);
         int maxQ = hexes.stream().mapToInt(c -> (int) c.q()).max().orElse(0);
         int columns = Math.max(9, maxQ - minQ + 1);
-        int shiftQ = Math.floorDiv(columns - 1 - minQ - maxQ, 2);
-        int minRow = hexes.stream().mapToInt(c -> (int) c.r() + Math.floorDiv((int) c.q() + shiftQ, 2))
-              .min().orElse(0);
-        int maxRow = hexes.stream().mapToInt(c -> (int) c.r() + Math.floorDiv((int) c.q() + shiftQ, 2))
-              .max().orElse(0);
-        int rows = Math.max(7, maxRow - minRow + 1);
-        return new SheetGrid(columns, rows, shiftQ, Math.floorDiv(rows - 1 - minRow - maxRow, 2));
+        int centeredQ = Math.floorDiv(columns - 1 - minQ - maxQ, 2);
+        // Try the nearest translations of both column parities before making the grid denser.
+        // The centered placement wins ties; all floors and location labels use this same translation.
+        return IntStream.of(centeredQ, centeredQ + 1, centeredQ - 1)
+              .filter(shiftQ -> minQ + shiftQ >= 0 && maxQ + shiftQ < columns)
+              .mapToObj(shiftQ -> {
+                  int minRow = hexes.stream().mapToInt(c -> (int) c.r() + Math.floorDiv((int) c.q() + shiftQ, 2))
+                        .min().orElse(0);
+                  int maxRow = hexes.stream().mapToInt(c -> (int) c.r() + Math.floorDiv((int) c.q() + shiftQ, 2))
+                        .max().orElse(0);
+                  int rows = Math.max(7, maxRow - minRow + 1);
+                  return new SheetGrid(columns, rows, shiftQ, Math.floorDiv(rows - 1 - minRow - maxRow, 2));
+              }).min(Comparator.comparingInt(SheetGrid::rows)).orElseThrow();
     }
 
     public static String locationLabel(BuildingEntity entity, int location) {
@@ -91,7 +141,7 @@ public final class BuildingUtil {
         List<CubeCoords> hexes = entity.getInternalBuilding().getOriginalCoordsList();
         CubeCoords hex = hexes.get(location / height);
         int level = entity.getBldgClass() == IBuilding.BRIDGE ? entity.getDesign().bridgeDeck(hex) : location % height;
-        return sheetGrid(hexes).label(hex) + "/" + levelLabel(level);
+        return sheetGrid(hexes).label(hex) + "/" + levelLabel(entity, level);
     }
 
     public static void assignEquipment(BuildingEntity entity, Mounted<?> mount, int location) {

@@ -1,7 +1,36 @@
 /*
  * Copyright (C) 2026 The MegaMek Team. All Rights Reserved.
- * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This file is part of MegaMekLab.
+ *
+ * MegaMekLab is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License (GPL),
+ * version 3 or (at your option) any later version,
+ * as published by the Free Software Foundation.
+ *
+ * MegaMekLab is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty
+ * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * A copy of the GPL should have been included with this project;
+ * if not, see <https://www.gnu.org/licenses/>.
+ *
+ * NOTICE: The MegaMek organization is a non-profit group of volunteers
+ * creating free software for the BattleTech community.
+ *
+ * MechWarrior, BattleMech, `Mech and AeroTech are registered trademarks
+ * of The Topps Company, Inc. All Rights Reserved.
+ *
+ * Catalyst Game Labs and the Catalyst Game Labs logo are trademarks of
+ * InMediaRes Productions, LLC.
+ *
+ * MechWarrior Copyright Microsoft Corporation. MegaMek was created under
+ * Microsoft's "Game Content Usage Rules"
+ * <https://www.xbox.com/en-US/developers/rules> and it is not endorsed by or
+ * affiliated with Microsoft.
  */
+
 package megameklab.ui.building;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,12 +45,14 @@ import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.imageio.ImageIO;
 import javax.swing.JSpinner;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
@@ -42,6 +73,75 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 @ExtendWith(InitializeTypes.class)
 class BuildingMainUITest {
+    @Test
+    void coordinateCheckboxHandlesNegativeHexesWithoutChangingLocationsOrSheetLabels() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        var negative = new CubeCoords(-10, -10, 20);
+        BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.CASTLE_BRIAN, 2, 40, 0,
+              List.of(CubeCoords.ZERO, negative));
+        var mount = building.addEquipment(EquipmentType.get("ISMediumLaser"), 2);
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = new BuildingMainUI(building, "negative-coordinates.blk");
+            editor.onActivated();
+            var selector = (JComboBox<?>) find(editor, "Edit hex");
+            assertEquals("1116", selector.getItemAt(0));
+            assertEquals("0101", selector.getItemAt(1));
+            var checkbox = (JCheckBox) find(editor, "Absolute coordinates");
+            assertFalse(checkbox.isSelected());
+            checkbox.doClick();
+            assertEquals("0,0", selector.getItemAt(0));
+            assertEquals("-10,-10", selector.getItemAt(1));
+            selector.setSelectedIndex(1);
+            assertEquals(negative, editor.selectedHex());
+            assertEquals("0101/G", BuildingUtil.locationLabel(building, mount.getLocation()));
+            render(editor, "building-absolute-coordinates");
+            editor.reloadTabs();
+            assertTrue(((JCheckBox) find(editor, "Absolute coordinates")).isSelected());
+            assertEquals("-10,-10", editor.hexLabel(negative));
+            ((JCheckBox) find(editor, "Absolute coordinates")).doClick();
+            assertEquals("0101", editor.hexLabel(negative));
+            assertEquals(2, mount.getLocation());
+            assertEquals(List.of(CubeCoords.ZERO, negative), building.getInternalBuilding().getOriginalCoordsList());
+            assertFalse(editor.isDirty());
+            assertFalse(editor.hasUndo());
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+    }
+
+    @Test
+    void footprintLegendFollowsTheEditingFloorAndPropertyScrollingLeavesTheMapInPlace() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        var north = CubeCoords.ZERO.toOffset().translated(0).toCube();
+        BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.CASTLE_BRIAN, 3, 40, 0,
+              List.of(CubeCoords.ZERO, north, CubeCoords.ZERO.toOffset().translated(5).toCube()));
+        building.getDesign().getElevators().add(new BuildingDesign.Elevator(north, 20, Map.of(0, 1, 1, 1)));
+        building.getDesign().getDoors().add(new BuildingDesign.Door(new BuildingDesign.Position(north, 0), 0, 1));
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = new BuildingMainUI(building, "map-features.blk");
+            editor.onActivated();
+            editor.selectLocation(north, 0);
+            var legend = (Container) find(editor, "Building footprint legend");
+            assertTrue(legend.isVisible());
+            assertEquals(2, java.util.Arrays.stream(legend.getComponents()).filter(Component::isVisible).count());
+            var footprint = find(editor, "Building footprint");
+            render(editor, "building-properties-and-footprint", 1600, 1000);
+            colorBounds(paint(footprint), Color.decode("#efcb8d"));
+            render(editor, "building-compact-editor", 1000, 680);
+            var properties = (JScrollPane) find(editor, "Building properties");
+            assertTrue(properties.getVerticalScrollBar().isVisible(), "All property fields remain reachable in a short window");
+            var mapPosition = SwingUtilities.convertPoint(footprint, new Point(), editor);
+            properties.getVerticalScrollBar().setValue(properties.getVerticalScrollBar().getMaximum());
+            render(editor, "building-compact-properties", 1000, 680);
+            assertEquals(mapPosition, SwingUtilities.convertPoint(footprint, new Point(), editor));
+            editor.selectLocation(north, 1);
+            assertEquals(1, java.util.Arrays.stream(legend.getComponents()).filter(Component::isVisible).count());
+            editor.selectLocation(north, 2);
+            assertFalse(legend.isVisible(), "Do not show keys for features on another floor");
+            assertFalse(editor.isDirty(), "Floor navigation and scrolling do not change the design");
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+    }
+
     @Test
     void classificationControlsIncludeCastleBrianWallsAndBridgesInTheSameEditor() throws Exception {
         var reference = new AtomicReference<BuildingMainUI>();
@@ -261,6 +361,11 @@ class BuildingMainUITest {
                   (JTable) find(editor, "Building equipment"));
             tabs.setSelectedIndex(3);
             render(editor, "building-construction-services");
+            var services = (JTabbedPane) find(editor, "Building service sections");
+            services.setSelectedIndex(1);
+            render(editor, "building-large-doors");
+            services.setSelectedIndex(2);
+            render(editor, "building-industrial-elevators");
             editor.undo();
             assertEquals(BuildingDesign.Ceiling.STANDARD, editor.getEntity().getDesign().getCeiling());
             editor.redo();
@@ -384,10 +489,14 @@ class BuildingMainUITest {
     }
 
     private void render(BuildingMainUI editor, String name) {
+        render(editor, name, 1300, 900);
+    }
+
+    private void render(BuildingMainUI editor, String name, int width, int height) {
         editor.addNotify();
-        editor.setSize(1300, 900);
+        editor.setSize(width, height);
         layout(editor);
-        BufferedImage image = new BufferedImage(1300, 900, BufferedImage.TYPE_INT_RGB);
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         var graphics = image.createGraphics();
         editor.printAll(graphics);
         graphics.dispose();

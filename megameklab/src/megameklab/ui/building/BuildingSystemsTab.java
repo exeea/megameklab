@@ -1,7 +1,36 @@
 /*
  * Copyright (C) 2026 The MegaMek Team. All Rights Reserved.
- * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This file is part of MegaMekLab.
+ *
+ * MegaMekLab is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License (GPL),
+ * version 3 or (at your option) any later version,
+ * as published by the Free Software Foundation.
+ *
+ * MegaMekLab is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty
+ * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * A copy of the GPL should have been included with this project;
+ * if not, see <https://www.gnu.org/licenses/>.
+ *
+ * NOTICE: The MegaMek organization is a non-profit group of volunteers
+ * creating free software for the BattleTech community.
+ *
+ * MechWarrior, BattleMech, `Mech and AeroTech are registered trademarks
+ * of The Topps Company, Inc. All Rights Reserved.
+ *
+ * Catalyst Game Labs and the Catalyst Game Labs logo are trademarks of
+ * InMediaRes Productions, LLC.
+ *
+ * MechWarrior Copyright Microsoft Corporation. MegaMek was created under
+ * Microsoft's "Game Content Usage Rules"
+ * <https://www.xbox.com/en-US/developers/rules> and it is not endorsed by or
+ * affiliated with Microsoft.
  */
+
 package megameklab.ui.building;
 
 import java.awt.BorderLayout;
@@ -52,7 +81,9 @@ class BuildingSystemsTab extends JPanel {
         setLayout(new BorderLayout(8, 8));
         setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         JPanel options = new JPanel(new GridLayout(0, 2, 8, 6));
-        options.setBorder(BorderFactory.createTitledBorder("Construction options — Tactical Operations: Advanced Rules"));
+        options.setBorder(BorderFactory.createCompoundBorder(
+              BorderFactory.createTitledBorder("Construction options — Tactical Operations: Advanced Rules"),
+              BorderFactory.createEmptyBorder(6, 6, 6, 6)));
         sealing.setName("Environmental sealing");
         heavyMetal.setName("Heavy-metal superstructure");
         officers.setName("Civilian officers");
@@ -82,7 +113,10 @@ class BuildingSystemsTab extends JPanel {
         add(options, BorderLayout.NORTH);
 
         JTabbedPane tabs = new JTabbedPane();
-        JPanel totals = new JPanel(new BorderLayout());
+        tabs.setName("Building service sections");
+        tabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
+        JPanel totals = new JPanel(new BorderLayout(8, 8));
+        totals.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         JPanel planning = new JPanel();
         planning.add(new JLabel("Fuel planning — expected combat hours per day:"));
         planning.add(combatHours);
@@ -109,7 +143,8 @@ class BuildingSystemsTab extends JPanel {
     }
 
     private JPanel doorPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         panel.add(new JLabel("One door per exterior hexside. Set its starting floor, facing, and height."), BorderLayout.NORTH);
         doorTable.setName("Building doors");
         doorTable.setRowHeight(24);
@@ -139,7 +174,8 @@ class BuildingSystemsTab extends JPanel {
     }
 
     private JPanel elevatorPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         panel.add(new JLabel("Lift capacity is limited to CF. Each served level occupies the entire hex."), BorderLayout.NORTH);
         elevatorTable.setName("Building elevators");
         elevatorTable.setRowHeight(24);
