@@ -32,7 +32,8 @@
  */
 package megameklab.util;
 
-import static megamek.common.options.OptionsConstants.RPG_MANEI_DOMINI;
+import static megamek.common.options.OptionsConstants.ADVANCED_NEURAL_INTERFACE_MODE;
+import static megamek.common.options.OptionsConstants.NEURAL_INTERFACE_MODE_PILOT_ONLY;
 import static megamek.common.options.OptionsConstants.RPG_PILOT_ADVANTAGES;
 
 import java.awt.Frame;
@@ -61,6 +62,7 @@ import megamek.common.loaders.MekFileParser;
 import megamek.common.options.GameOptions;
 import megamek.common.units.Aero;
 import megamek.common.units.BTObject;
+import megamek.common.units.BuildingEntity;
 import megamek.common.units.Dropship;
 import megamek.common.units.Entity;
 import megamek.common.units.Infantry;
@@ -112,7 +114,7 @@ public class UnitPrintManager {
         try {
             var options = new GameOptions();
             options.initialize();
-            options.getOption(RPG_MANEI_DOMINI).setValue(true);
+            options.getOption(ADVANCED_NEURAL_INTERFACE_MODE).setValue(NEURAL_INTERFACE_MODE_PILOT_ONLY);
             options.getOption(RPG_PILOT_ADVANTAGES).setValue(true);
             MULParser parser = new MULParser(file, options);
             if (!MULVersionValidator.isCorrectVersion(parent, parser)) {
@@ -243,6 +245,10 @@ public class UnitPrintManager {
                         sheets.add(prs);
                         protoList = new ArrayList<>();
                     }
+                } else if (unit instanceof BuildingEntity building) {
+                    var sheet = new PrintBuilding(building, pageCount, options);
+                    sheets.add(sheet);
+                    pageCount += sheet.getPageCount();
                 } else if (unit instanceof HandheldWeapon) {
                     if (!singlePrint) {
                         final PrintHandheldWeapon phw = new PrintHandheldWeapon((HandheldWeapon) unit,

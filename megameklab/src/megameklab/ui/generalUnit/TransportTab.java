@@ -62,6 +62,7 @@ import megamek.common.bays.InfantryBay;
 import megamek.common.equipment.DockingCollar;
 import megamek.common.equipment.Transporter;
 import megamek.common.units.Entity;
+import megamek.common.units.BuildingEntity;
 import megamek.common.units.EntityWeightClass;
 import megamek.common.units.InfantryCompartment;
 import megamek.common.units.Jumpship;
@@ -448,6 +449,9 @@ public class TransportTab extends IView implements ActionListener, ChangeListene
                 Bay newBay = bayType.newBay(bay.getUnusedSlots(), bayNum);
                 newBay.setDoors(bay.getDoors());
                 newBay.setFacing(bay.getFacing());
+                if (getEntity() instanceof BuildingEntity building) {
+                    building.getDesign().replaceBay(bay, newBay);
+                }
                 if (getEntity().isPodMountedTransport(bay)) {
                     podList.add(newBay);
                 } else {
@@ -509,11 +513,13 @@ public class TransportTab extends IView implements ActionListener, ChangeListene
             if (size > 0) {
                 int selected = tblInstalled.getSelectedRow();
                 Bay bay;
+                Bay previousBay = null;
                 int bayNum = 1;
                 if ((selected >= 0)
                       && (modelInstalled
                       .getBayType(tblInstalled.convertRowIndexToModel(selected)) == BayData.CARGO)) {
                     bay = modelInstalled.getBay(tblInstalled.convertRowIndexToModel(selected));
+                    previousBay = bay;
                     size += bay.getCapacity();
                     bayNum = bay.getBayNumber();
                     removeBay(bay);
@@ -523,6 +529,9 @@ public class TransportTab extends IView implements ActionListener, ChangeListene
                     }
                 }
                 bay = BayData.CARGO.newBay(size, bayNum);
+                if (previousBay != null && getEntity() instanceof BuildingEntity building) {
+                    building.getDesign().replaceBay(previousBay, bay);
+                }
                 addBay(bay, false);
                 refresh();
             }
@@ -847,6 +856,9 @@ public class TransportTab extends IView implements ActionListener, ChangeListene
                 Bay newBay = bayType.newBay(size, bay.getBayNumber());
                 newBay.setDoors(bay.getDoors());
                 newBay.setFacing(bay.getFacing());
+                if (getEntity() instanceof BuildingEntity building) {
+                    building.getDesign().replaceBay(bay, newBay);
+                }
                 removeBay(bay);
                 addBay(newBay, pod);
                 modelInstalled.bayList.set(row, newBay);

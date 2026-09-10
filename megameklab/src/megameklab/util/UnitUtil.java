@@ -111,7 +111,8 @@ public class UnitUtil {
         final Game game = dummyClient.getGame();
         game.getOptions().getOption(OptionsConstants.ADVANCED_STRATOPS_QUIRKS).setValue(true);
         game.getOptions().getOption(OptionsConstants.RPG_PILOT_ADVANTAGES).setValue(true);
-        game.getOptions().getOption(OptionsConstants.RPG_MANEI_DOMINI).setValue(true);
+        game.getOptions().getOption(OptionsConstants.ADVANCED_NEURAL_INTERFACE_MODE)
+              .setValue(OptionsConstants.NEURAL_INTERFACE_MODE_PILOT_ONLY);
         game.addPlayer(1, dummyPlayer);
         dummyClient.setLocalPlayerNumber(1);
     }
@@ -1537,6 +1538,8 @@ public class UnitUtil {
             testEntity = new TestInfantry((ConvInfantry) unit, entityVerifier.infOption, null);
         } else if (unit.hasETypeFlag(Entity.ETYPE_HANDHELD_WEAPON)) {
             testEntity = new TestHandheldWeapon((HandheldWeapon) unit, entityVerifier.infOption, null);
+        } else if (unit instanceof BuildingEntity building) {
+            testEntity = new TestBuilding(building, entityVerifier.tankOption, null);
         }
         return testEntity;
     }
@@ -1966,6 +1969,8 @@ public class UnitUtil {
             return Entity.ETYPE_TANK;
         } else if (newUnit instanceof HandheldWeapon) {
             return Entity.ETYPE_HANDHELD_WEAPON;
+        } else if (newUnit instanceof megamek.common.units.BuildingEntity) {
+            return Entity.ETYPE_BUILDING_ENTITY;
         } else if (newUnit instanceof GunEmplacement) {
             return Entity.ETYPE_GUN_EMPLACEMENT;
         } else {
