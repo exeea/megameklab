@@ -122,7 +122,7 @@ public class PrintBuilding extends PrintEntity {
         setTextField(TITLE, getRecordSheetTitle().toUpperCase());
         setTextField(TYPE, building.getShortNameRaw(), true);
         setTextField("levels", building.getBldgClass() == IBuilding.BRIDGE ? "Decks: " + BuildingConstruction.mapLevels(building).stream()
-              .map(level -> BuildingUtil.levelLabel(building, level)).collect(Collectors.joining(",")) : Integer.toString(building.getInternalBuilding().getBuildingHeight()));
+              .map(building::getLevelLabel).collect(Collectors.joining(",")) : Integer.toString(building.getInternalBuilding().getBuildingHeight()));
         setTextField(MP_WALK, "0");
         if (!building.isClan() && !building.isMixedTech()) {
             hideElement("techClanCheck");
@@ -304,7 +304,7 @@ public class PrintBuilding extends PrintEntity {
                 }
             }
             text(layer, width * scale, height * scale + 10, width * scale,
-                  "Level: " + BuildingUtil.levelLabel(building, level), 7, "end", "bold");
+                  "Level: " + building.getLevelLabel(level, true), 7, "end", "bold");
         }
         if (!symbols.isEmpty()) {
             Element key = element((Element) region.getParentNode(), "g", "class", "building-map-key", "transform",

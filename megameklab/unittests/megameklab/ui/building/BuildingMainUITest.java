@@ -45,6 +45,7 @@ import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.imageio.ImageIO;
@@ -52,9 +53,11 @@ import javax.swing.JSpinner;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTabbedPane;
+import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
 
 import megamek.common.board.CubeCoords;
@@ -131,16 +134,16 @@ class BuildingMainUITest {
         SwingUtilities.invokeAndWait(() -> {
             var editor = reference.get();
             var selector = (JComboBox<?>) find(editor, "Edit floor");
-            assertEquals(List.of("1", "G", "-1", "-2"), java.util.stream.IntStream.range(0, selector.getItemCount())
+            assertEquals(List.of("1", "Ground", "-1", "-2"), java.util.stream.IntStream.range(0, selector.getItemCount())
                   .mapToObj(selector::getItemAt).toList());
             assertEquals(0, editor.selectedLocation());
             selector.setSelectedItem("-1");
             assertEquals(1, editor.selectedLocation());
             assertEquals(1, ((JTable) find(editor, "Building equipment")).getRowCount());
-            selector.setSelectedItem("G");
+            selector.setSelectedItem("Ground");
             assertEquals(2, editor.selectedLocation());
             assertEquals(0, ((JTable) find(editor, "Building equipment")).getRowCount());
-            assertEquals(2, BuildingPlacementDialogs.floor(editor.getEntity(), "G"));
+            assertEquals(2, BuildingPlacementDialogs.floor(editor.getEntity(), "Ground"));
             assertEquals(1, BuildingPlacementDialogs.floor(editor.getEntity(), "-1"));
             render(editor, "building-ground-reference", 1300, 950);
             assertTrue(editor.hasUndo());
@@ -187,7 +190,7 @@ class BuildingMainUITest {
             assertEquals("-10,-10", selector.getItemAt(1));
             selector.setSelectedIndex(1);
             assertEquals(negative, editor.selectedHex());
-            assertEquals("0101/G", BuildingUtil.locationLabel(building, mount.getLocation()));
+            assertEquals("0101/Ground", BuildingUtil.locationLabel(building, mount.getLocation()));
             render(editor, "building-absolute-coordinates");
             editor.reloadTabs();
             assertTrue(((JCheckBox) find(editor, "Absolute coordinates")).isSelected());
@@ -237,6 +240,91 @@ class BuildingMainUITest {
     }
 
     @Test
+    void pancakeLayersNavigateGroundRelativeFloorsWithoutChangingTheDesign() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        var east = new CubeCoords(1, 0, -1);
+        BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.FORTRESS, 4, 80, 0, List.of(CubeCoords.ZERO, east));
+        building.getDesign().setBaseLevel(-2);
+        var mount = building.addEquipment(EquipmentType.get("ISMediumLaser"), 1);
+        building.getDesign().getElevators().add(new BuildingDesign.Elevator(east, 20, Map.of(0, 0, 1, 0, 2, 0, 3, 0, 4, 0)));
+        building.getDesign().getDoors().add(new BuildingDesign.Door(new BuildingDesign.Position(east, 2), 0, 1));
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = new BuildingMainUI(building, "pancake.blk");
+            editor.onActivated();
+            boolean dirty = editor.isDirty(), undo = editor.hasUndo();
+            var footprint = (JComponent) find(editor, "Building footprint");
+            ((JToggleButton) find(editor, "Pancake view")).doClick();
+            render(editor, "building-pancake", 1600, 1000);
+            var layerPoints = pancakeLayerPoints(footprint);
+            assertEquals(List.of("Level: 1", "Level: Ground", "Level: -1", "Level: -2"), List.copyOf(layerPoints.keySet()));
+            var shafts = colorBounds(paint(footprint), Color.decode("#efcb8d"));
+            assertTrue(shafts.height > 200, "The elevator connects its floors in the stack");
+            Point ground = layerPoints.get("Level: Ground");
+            footprint.dispatchEvent(new MouseEvent(footprint, MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0,
+                  ground.x, ground.y, 1, false, MouseEvent.BUTTON1));
+            assertEquals(2, editor.selectedFloor());
+            assertTrue(((JToggleButton) find(editor, "Top view")).isSelected());
+            assertEquals("Ground", ((JComboBox<?>) find(editor, "Edit floor")).getSelectedItem());
+            assertEquals(1, mount.getLocation());
+            assertEquals(List.of(CubeCoords.ZERO, east), building.getInternalBuilding().getCoordsList());
+            assertEquals(dirty, editor.isDirty());
+            assertEquals(undo, editor.hasUndo());
+
+            BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.CASTLE_BRIAN, 20, 40, 0, List.of(CubeCoords.ZERO, east));
+            editor.refreshAll();
+            ((JToggleButton) find(editor, "Pancake view")).doClick();
+            render(editor, "building-pancake-tall", 1300, 900);
+            var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, footprint);
+            assertTrue(scroll.getVerticalScrollBar().isVisible());
+            scroll.getVerticalScrollBar().setValue(scroll.getVerticalScrollBar().getMaximum());
+            render(editor, "building-pancake-tall-bottom", 1300, 900);
+            assertTrue(scroll.getViewport().getViewPosition().y > 0);
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+    }
+
+    @Test
+    void bridgePancakeContainsOnlyActualDeckElevationsAndOpensTheirHexes() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        var east = new CubeCoords(1, 0, -1);
+        var end = new CubeCoords(2, 0, -2);
+        BuildingUtil.configure(building, BuildingType.MEDIUM, IBuilding.BRIDGE, 1, 40, 0, List.of(CubeCoords.ZERO, east, end));
+        building.getDesign().getBridgeDecks().put(east, 1);
+        building.getDesign().getBridgeDecks().put(end, 2);
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = new BuildingMainUI(building, "pancake-bridge.blk");
+            editor.onActivated();
+            ((JToggleButton) find(editor, "Pancake view")).doClick();
+            render(editor, "building-pancake-bridge", 1300, 900);
+            var footprint = (JComponent) find(editor, "Building footprint");
+            var layerPoints = pancakeLayerPoints(footprint);
+            assertEquals(List.of("Level: 2", "Level: 1", "Level: Ground"), List.copyOf(layerPoints.keySet()));
+            Point deck = layerPoints.get("Level: 2");
+            footprint.dispatchEvent(new MouseEvent(footprint, MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0,
+                  deck.x, deck.y, 1, false, MouseEvent.BUTTON1));
+            assertEquals(end, editor.selectedHex());
+            assertEquals(0, editor.selectedFloor());
+            assertEquals("Deck 2", ((JComboBox<?>) find(editor, "Edit floor")).getSelectedItem());
+            assertTrue(((JToggleButton) find(editor, "Top view")).isSelected());
+            assertFalse(editor.isDirty());
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+    }
+
+    private Map<String, Point> pancakeLayerPoints(JComponent footprint) {
+        paint(footprint);
+        var points = new LinkedHashMap<String, Point>();
+        for (int y = 0; y < footprint.getHeight(); y++) {
+            var event = new MouseEvent(footprint, MouseEvent.MOUSE_MOVED, 0, 0, footprint.getWidth() / 2, y, 0, false);
+            String tooltip = footprint.getToolTipText(event);
+            if (tooltip != null) {
+                points.putIfAbsent(tooltip.split(" — ")[0], event.getPoint());
+            }
+        }
+        return points;
+    }
+
+    @Test
     void classificationControlsIncludeCastleBrianWallsAndBridgesInTheSameEditor() throws Exception {
         var reference = new AtomicReference<BuildingMainUI>();
         SwingUtilities.invokeAndWait(() -> {
@@ -280,7 +368,7 @@ class BuildingMainUITest {
         SwingUtilities.invokeAndWait(() -> { });
         SwingUtilities.invokeAndWait(() -> {
             var editor = reference.get();
-            assertFalse(((JSpinner) find(editor, "Levels (ground = G)")).isEnabled());
+            assertFalse(((JSpinner) find(editor, "Building levels")).isEnabled());
             ((JSpinner) find(editor, "Bridge start elevation")).setValue(4);
             assertEquals(4, editor.getEntity().getDesign().bridgeDeck(CubeCoords.ZERO));
         });
@@ -380,7 +468,7 @@ class BuildingMainUITest {
             boolean wasDirty = editor.isDirty();
             var floor = (JComboBox<?>) find(editor, "Edit floor");
             assertEquals("2", floor.getItemAt(0));
-            assertEquals("G", floor.getItemAt(2));
+            assertEquals("Ground", floor.getItemAt(2));
             ((JComboBox<?>) find(editor, "Edit hex")).setSelectedIndex(1);
             floor.setSelectedItem("2");
             assertEquals(5, editor.selectedLocation());
@@ -411,12 +499,12 @@ class BuildingMainUITest {
             assertEquals(0, ((JTable) find(editor, "Building equipment")).getRowCount());
             ((JComboBox<?>) find(editor, "Edit floor")).setSelectedItem("2");
             assertEquals(1, ((JTable) find(editor, "Building equipment")).getRowCount());
-            ((JSpinner) find(editor, "Levels (ground = G)")).setValue(1);
+            ((JSpinner) find(editor, "Building levels")).setValue(1);
         });
         SwingUtilities.invokeAndWait(() -> { });
         SwingUtilities.invokeAndWait(() -> {
             var editor = reference.get();
-            assertEquals("G", ((JComboBox<?>) find(editor, "Edit floor")).getSelectedItem());
+            assertEquals("Ground", ((JComboBox<?>) find(editor, "Edit floor")).getSelectedItem());
             assertTrue(editor.getEntity().getEquipment().isEmpty());
             editor.undo();
             assertEquals(3, editor.getEntity().getInternalBuilding().getBuildingHeight());
@@ -455,11 +543,18 @@ class BuildingMainUITest {
                   (JTable) find(editor, "Building equipment"));
             tabs.setSelectedIndex(3);
             render(editor, "building-construction-services");
-            var services = (JTabbedPane) find(editor, "Building service sections");
-            services.setSelectedIndex(1);
-            render(editor, "building-large-doors");
-            services.setSelectedIndex(2);
-            render(editor, "building-industrial-elevators");
+            var services = (Container) find(editor, "Building service sections");
+            assertEquals(3, services.getComponentCount());
+            for (int index = 0; index < 3; index++) {
+                var panel = services.getComponent(index);
+                assertTrue(panel.isVisible());
+                assertEquals(services.getComponent(0).getY(), panel.getY());
+                if (index > 0) {
+                    var previous = services.getComponent(index - 1);
+                    assertTrue(panel.getX() >= previous.getX() + previous.getWidth());
+                }
+            }
+            assertEquals(tabs, SwingUtilities.getAncestorOfClass(JTabbedPane.class, find(editor, "Building doors")));
             editor.undo();
             assertEquals(BuildingDesign.Ceiling.STANDARD, editor.getEntity().getDesign().getCeiling());
             editor.redo();
@@ -558,7 +653,7 @@ class BuildingMainUITest {
         SwingUtilities.invokeAndWait(() -> { });
         var editor = reference.get();
         SwingUtilities.invokeAndWait(() -> {
-            JSpinner levels = (JSpinner) find(editor, "Levels (ground = G)");
+            JSpinner levels = (JSpinner) find(editor, "Building levels");
             assertNotNull(levels);
             levels.setValue(1);
         });

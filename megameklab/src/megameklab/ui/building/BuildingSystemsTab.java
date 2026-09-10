@@ -34,6 +34,7 @@
 package megameklab.ui.building;
 
 import java.awt.BorderLayout;
+import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import java.util.List;
 import javax.swing.BorderFactory;
@@ -45,12 +46,12 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
-import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.table.AbstractTableModel;
 
+import megamek.client.ui.WrapLayout;
 import megamek.common.equipment.enums.StructureEngine;
 import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.BuildingConstruction;
@@ -115,13 +116,14 @@ class BuildingSystemsTab extends JPanel {
         options.add(new JLabel("Military structures include officers automatically."));
         add(options, BorderLayout.NORTH);
 
-        JTabbedPane tabs = new JTabbedPane();
-        tabs.setName("Building service sections");
-        tabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
+        JPanel services = new JPanel(new GridLayout(1, 3, 8, 0));
+        services.setName("Building service sections");
         JPanel totals = new JPanel(new BorderLayout(8, 8));
-        totals.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-        JPanel planning = new JPanel();
-        planning.add(new JLabel("Fuel planning — expected combat hours per day:"));
+        totals.setBorder(BorderFactory.createCompoundBorder(
+              BorderFactory.createTitledBorder("Capacity, crew, power & validation"),
+              BorderFactory.createEmptyBorder(8, 8, 8, 8)));
+        JPanel planning = new JPanel(new WrapLayout(FlowLayout.LEFT));
+        planning.add(new JLabel("Combat hours per day:"));
         planning.add(combatHours);
         minimumCrew.setName("Use minimum operating crew");
         crewCount.setName("Building crew count");
@@ -134,10 +136,10 @@ class BuildingSystemsTab extends JPanel {
         report.setFont(new java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12));
         report.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         totals.add(new JScrollPane(report), BorderLayout.CENTER);
-        tabs.addTab("Capacity, crew, power & validation", totals);
-        tabs.addTab("Large doors", doorPanel());
-        tabs.addTab("Industrial elevators", elevatorPanel());
-        add(tabs, BorderLayout.CENTER);
+        services.add(totals);
+        services.add(doorPanel());
+        services.add(elevatorPanel());
+        add(services, BorderLayout.CENTER);
         sealing.addActionListener(e -> apply());
         heavyMetal.addActionListener(e -> apply());
         officers.addActionListener(e -> apply());
@@ -162,14 +164,15 @@ class BuildingSystemsTab extends JPanel {
 
     private JPanel doorPanel() {
         JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-        panel.add(new JLabel("One door per exterior hexside. Set its starting floor, facing, and height."), BorderLayout.NORTH);
+        panel.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createTitledBorder("Large doors"),
+              BorderFactory.createEmptyBorder(8, 8, 8, 8)));
+        panel.add(serviceHint("One door per exterior hexside. Set its starting floor, facing, and height."), BorderLayout.NORTH);
         doorTable.setName("Building doors");
         doorTable.setRowHeight(24);
         doorTable.putClientProperty("terminateEditOnFocusLost", true);
         doorTable.getColumnModel().getColumn(1).setCellEditor(new DefaultCellEditor(new JComboBox<>(BuildingEquipmentTab.FACINGS)));
         panel.add(new JScrollPane(doorTable), BorderLayout.CENTER);
-        JPanel actions = new JPanel();
+        JPanel actions = new JPanel(new WrapLayout(FlowLayout.LEFT));
         JButton add = new JButton("Add at editing location");
         add.addActionListener(e -> {
             editor.getEntity().getDesign().getDoors().add(new BuildingDesign.Door(
@@ -193,12 +196,13 @@ class BuildingSystemsTab extends JPanel {
 
     private JPanel elevatorPanel() {
         JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-        panel.add(new JLabel("Lift capacity is limited to CF. Each served level occupies the entire hex."), BorderLayout.NORTH);
+        panel.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createTitledBorder("Industrial elevators"),
+              BorderFactory.createEmptyBorder(8, 8, 8, 8)));
+        panel.add(serviceHint("Lift capacity is limited to CF. Each served level occupies the entire hex."), BorderLayout.NORTH);
         elevatorTable.setName("Building elevators");
         elevatorTable.setRowHeight(24);
         panel.add(new JScrollPane(elevatorTable), BorderLayout.CENTER);
-        JPanel actions = new JPanel();
+        JPanel actions = new JPanel(new WrapLayout(FlowLayout.LEFT));
         JButton add = new JButton("Add in editing hex");
         add.addActionListener(e -> BuildingPlacementDialogs.elevator(editor, -1));
         JButton edit = new JButton("Edit selected elevator");
@@ -220,6 +224,17 @@ class BuildingSystemsTab extends JPanel {
         actions.add(remove);
         panel.add(actions, BorderLayout.SOUTH);
         return panel;
+    }
+
+    private JTextArea serviceHint(String text) {
+        var hint = new JTextArea(text, 3, 0);
+        hint.setEditable(false);
+        hint.setFocusable(false);
+        hint.setOpaque(false);
+        hint.setFont(getFont());
+        hint.setLineWrap(true);
+        hint.setWrapStyleWord(true);
+        return hint;
     }
 
     private void apply() {

@@ -71,17 +71,9 @@ public final class BuildingUtil {
         return entity;
     }
 
-    public static String levelLabel(long level) {
-        return level == 0 ? "G" : Long.toString(level);
-    }
-
-    public static String levelLabel(BuildingEntity entity, int level) {
-        return levelLabel((long) BuildingConstruction.baseLevel(entity) + level);
-    }
-
     public static String roofLevelLabel(BuildingEntity entity, int level) {
         return level == entity.getInternalBuilding().getBuildingHeight()
-              ? "Roof (" + levelLabel(entity, level) + ")" : levelLabel(entity, level);
+              ? "Roof (" + entity.getLevelLabel(level) + ")" : entity.getLevelLabel(level);
     }
 
     public static String absoluteHexLabel(CubeCoords hex) {
@@ -141,7 +133,7 @@ public final class BuildingUtil {
         List<CubeCoords> hexes = entity.getInternalBuilding().getOriginalCoordsList();
         CubeCoords hex = hexes.get(location / height);
         int level = entity.getBldgClass() == IBuilding.BRIDGE ? entity.getDesign().bridgeDeck(hex) : location % height;
-        return sheetGrid(hexes).label(hex) + "/" + levelLabel(entity, level);
+        return sheetGrid(hexes).label(hex) + "/" + entity.getLevelLabel(level, true);
     }
 
     public static void assignEquipment(BuildingEntity entity, Mounted<?> mount, int location) {

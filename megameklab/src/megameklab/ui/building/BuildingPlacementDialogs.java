@@ -57,12 +57,12 @@ final class BuildingPlacementDialogs {
                 position = java.util.Optional.of(anchor);
             }
             model.addRow(new Object[] { position.isPresent(), grid.label(hex),
-                  BuildingUtil.levelLabel(entity, position.map(BuildingDesign.Position::level).orElse(editor.selectedFloor())) });
+                  entity.getLevelLabel(position.map(BuildingDesign.Position::level).orElse(editor.selectedFloor())) });
         }
         JTable table = new JTable(model);
         JComboBox<String> floors = new JComboBox<>();
         for (int floor = entity.getInternalBuilding().getBuildingHeight() - 1; floor >= 0; floor--) {
-            floors.addItem(BuildingUtil.levelLabel(entity, floor));
+            floors.addItem(entity.getLevelLabel(floor));
         }
         table.getColumnModel().getColumn(2).setCellEditor(new DefaultCellEditor(floors));
         JPanel panel = tablePanel(table, "One item, with its mass divided evenly across the selected hexes. Include its primary hex/floor.");
@@ -224,6 +224,6 @@ final class BuildingPlacementDialogs {
     }
 
     static int floor(BuildingEntity entity, String text) {
-        return Math.toIntExact(("G".equals(text) ? 0 : Long.parseLong(text)) - BuildingConstruction.baseLevel(entity));
+        return Math.toIntExact(("Ground".equals(text) ? 0 : Long.parseLong(text)) - BuildingConstruction.baseLevel(entity));
     }
 }

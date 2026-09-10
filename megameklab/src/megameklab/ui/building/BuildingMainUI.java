@@ -207,12 +207,12 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         boolean bridge = getEntity().getBldgClass() == megamek.common.units.IBuilding.BRIDGE;
         floorSelector.setEnabled(!bridge);
         if (bridge) {
-            floorSelector.addItem("Deck " + BuildingUtil.levelLabel(getEntity(), getEntity().getDesign().bridgeDeck(selectedHex)));
+            floorSelector.addItem("Deck " + getEntity().getLevelLabel(getEntity().getDesign().bridgeDeck(selectedHex)));
         } else {
             for (int floor = height - 1; floor >= 0; floor--) {
-                floorSelector.addItem(BuildingUtil.levelLabel(getEntity(), floor));
+                floorSelector.addItem(getEntity().getLevelLabel(floor));
             }
-            floorSelector.setSelectedItem(BuildingUtil.levelLabel(getEntity(), selectedFloor));
+            floorSelector.setSelectedItem(getEntity().getLevelLabel(selectedFloor));
         }
         selecting = false;
     }

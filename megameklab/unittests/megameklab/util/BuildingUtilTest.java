@@ -68,7 +68,7 @@ class BuildingUtilTest {
         assertTrue(List.of(block.getDataAsString("building_options")).contains("base_level=-2"));
         var loaded = (BuildingEntity) new BLKStructureFile(block).getEntity();
         assertEquals(-2, loaded.getDesign().getBaseLevel());
-        assertEquals(List.of("0504/-2", "0504/-1", "0504/G", "0504/1"), java.util.stream.IntStream.range(0, 4)
+        assertEquals(List.of("0504/-2", "0504/-1", "0504/Ground", "0504/1"), java.util.stream.IntStream.range(0, 4)
               .mapToObj(loc -> BuildingUtil.locationLabel(loaded, loc)).toList());
         assertEquals(1, loaded.getEquipment().getFirst().getLocation());
         assertEquals(entity.getDesign().getDoors(), loaded.getDesign().getDoors());
@@ -94,7 +94,7 @@ class BuildingUtilTest {
         entity.getDesign().setBaseLevel(0);
         var loaded = (BuildingEntity) new BLKStructureFile(BLKFile.getBlock(entity)).getEntity();
         assertEquals(0, loaded.getDesign().getBaseLevel());
-        assertEquals("0504/G", BuildingUtil.locationLabel(loaded, 0));
+        assertEquals("0504/Ground", BuildingUtil.locationLabel(loaded, 0));
         loaded.getDesign().setBaseLevel(null);
         assertEquals(-5, BuildingConstruction.baseLevel(loaded));
         loaded.getDesign().setSite(BuildingDesign.Site.SURFACE);
@@ -111,7 +111,7 @@ class BuildingUtilTest {
                 assertEquals(a.toOffset().distance(b.toOffset()), grid.position(a).distance(grid.position(b)));
             }
         }
-        assertEquals("0504/G", BuildingUtil.locationLabel(BuildingUtil.newBuilding(), 0));
+        assertEquals("0504/Ground", BuildingUtil.locationLabel(BuildingUtil.newBuilding(), 0));
     }
 
     @Test

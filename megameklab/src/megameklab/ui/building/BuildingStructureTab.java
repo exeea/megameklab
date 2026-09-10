@@ -46,9 +46,13 @@ import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.Polygon;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Point2D;
+import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -59,6 +63,7 @@ import java.util.Map;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -68,6 +73,8 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSpinner;
 import javax.swing.JTextArea;
+import javax.swing.JToggleButton;
+import javax.swing.Scrollable;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 
@@ -112,6 +119,8 @@ class BuildingStructureTab extends JPanel implements BuildListener {
     private final JLabel limits = new JLabel();
     private final JButton remove = new JButton("Remove selected hex");
     private final Footprint footprint = new Footprint();
+    private final JToggleButton topView = new JToggleButton("Top view", true);
+    private final JToggleButton pancakeView = new JToggleButton("Pancake view");
     private final JPanel legend = new JPanel(new WrapLayout(FlowLayout.LEFT, 12, 4));
     private final Map<BuildingMap.Feature, JLabel> legendEntries = new EnumMap<>(BuildingMap.Feature.class);
     private final JCheckBox absoluteCoordinates = new JCheckBox("Absolute coordinates");
@@ -143,16 +152,16 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         JPanel fields = new JPanel(new GridBagLayout());
         addField(fields, "Building type", type);
         addField(fields, "Classification", buildingClass);
-        addField(fields, "Levels (ground = G)", levels).setText("Levels:");
+        addField(fields, "Building levels", levels).setText("Levels:");
         levels.setToolTipText("Number of floors. Set their numbering with Lowest floor level.");
         JPanel floorNumbering = new JPanel(new GridLayout(0, 1, 0, 4));
         baseLevel.setName("Lowest floor level");
-        baseLevel.setToolTipText("0 = G; -2 numbers the floors -2, -1, G, 1… This sets labels, not construction height.");
+        baseLevel.setToolTipText("0 = Ground; -2 numbers the floors -2, -1, Ground, 1… This sets labels, not construction height.");
         automaticBaseLevel.setName("Automatic floor numbering");
-        automaticBaseLevel.setToolTipText("Surface floors start at G. Underground/underwater floors use roof cover depth.");
+        automaticBaseLevel.setToolTipText("Surface floors start at Ground. Underground/underwater floors use roof cover depth.");
         floorNumbering.add(baseLevel);
         floorNumbering.add(automaticBaseLevel);
-        baseLevelLabel = addField(fields, "Lowest floor level (0 = G)", floorNumbering);
+        baseLevelLabel = addField(fields, "Lowest floor level (0 = Ground)", floorNumbering);
         cfLabel = addField(fields, "CF per hex", cf);
         armorLabel = addField(fields, "Armor points per hex", armor);
         var fieldWidth = new GridBagConstraints();
@@ -197,9 +206,18 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         absoluteCoordinates.addActionListener(event -> editor.setAbsoluteCoordinates(absoluteCoordinates.isSelected()));
         JPanel mapHeader = new JPanel(new BorderLayout(8, 4));
         mapHeader.add(legend, BorderLayout.CENTER);
-        mapHeader.add(absoluteCoordinates, BorderLayout.EAST);
+        var views = new ButtonGroup();
+        var mapControls = new JPanel(new WrapLayout(FlowLayout.RIGHT));
+        for (var button : List.of(topView, pancakeView)) {
+            button.setName(button.getText());
+            views.add(button);
+            button.addActionListener(event -> refresh());
+            mapControls.add(button);
+        }
+        mapControls.add(absoluteCoordinates);
+        mapHeader.add(mapControls, BorderLayout.SOUTH);
         map.add(mapHeader, BorderLayout.NORTH);
-        map.add(footprint, BorderLayout.CENTER);
+        map.add(new TabScrollPane(footprint), BorderLayout.CENTER);
         geometry.add(map, BorderLayout.CENTER);
         JPanel actions = new JPanel();
         actions.setLayout(new BoxLayout(actions, BoxLayout.Y_AXIS));
@@ -267,7 +285,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
             sideControls.add(sides[side]);
         }
         actions.add(sideControls);
-        JLabel deckLabel = new JLabel("Deck elevation at selected hex (0 = G)");
+        JLabel deckLabel = new JLabel("Deck elevation at selected hex (0 = Ground)");
         deckLabel.setLabelFor(deckLevel);
         deckLevel.setName("Bridge deck elevation");
         deckLevel.setEnabled(false);
@@ -363,7 +381,9 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                     : "up to " + rule.hexes() + " hexes", rule.levels(), entity().getBldgClass() == IBuilding.BRIDGE ? "deck" : "levels")) + "</html>");
         protectionScale.setText(entity().getConstructionCFScale() == 10 ? "<html>Capital CF and armor<br>1 point = 10 standard points</html>"
               : BuildingConstruction.usesHexsides(entity()) ? "Standard CF and armor per occupied hexside" : "Standard CF and armor per hex");
-        geometryHint.setText("Click + to add a hex; click a hex to select it; double-click to edit its equipment.\n"
+        geometryHint.setText((pancakeView.isSelected()
+              ? "Highest floor first. Click a layer to open that floor in top view; scroll to see more floors.\n"
+              : "Click + to add a hex; click a hex to select it; double-click to edit its equipment.\n")
               + (entity().getBldgClass() == IBuilding.BRIDGE
               ? "Bridge decks follow a steady slope. Their ends must meet the underlying map terrain."
               : BuildingConstruction.usesHexsides(entity()) ? "Select occupied hexsides below. All segments share CF, armor and height."
@@ -390,13 +410,20 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         type.setEnabled(entity().getBldgClass() != IBuilding.TENT && entity().getBldgClass() != IBuilding.FENCE);
         absoluteCoordinates.setSelected(editor.absoluteCoordinates());
         selection.setText("Editing: " + editor.hexLabel(editor.selectedHex()) + "/"
-              + BuildingUtil.levelLabel(entity(), displayedLevel(editor.selectedHex())));
+              + entity().getLevelLabel(displayedLevel(editor.selectedHex())));
         remove.setEnabled(entity().getInternalBuilding().getCoordsList().size() > 1);
         var features = EnumSet.noneOf(BuildingMap.Feature.class);
-        entity().getInternalBuilding().getCoordsList().forEach(hex -> features.addAll(BuildingMap.features(entity(), hex, displayedLevel(hex))));
+        for (var hex : entity().getInternalBuilding().getCoordsList()) {
+            for (int level : pancakeView.isSelected() ? BuildingConstruction.mapLevels(entity()) : List.of(displayedLevel(hex))) {
+                if (BuildingConstruction.occupiesMapLevel(entity(), hex, level)) {
+                    features.addAll(BuildingMap.features(entity(), hex, level));
+                }
+            }
+        }
         legendEntries.forEach((feature, entry) -> entry.setVisible(features.contains(feature)));
         legend.setVisible(!features.isEmpty());
         legend.revalidate();
+        footprint.revalidate();
         footprint.repaint();
         refreshing = false;
     }
@@ -479,15 +506,36 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         }
     }
 
-    private class Footprint extends JPanel {
+    private class Footprint extends JPanel implements Scrollable {
         private final Map<CubeCoords, Polygon> cells = new LinkedHashMap<>();
+        private final List<Layer> layers = new ArrayList<>();
+
+        private record Layer(int level, Rectangle2D bounds, Map<CubeCoords, Polygon> cells) { }
 
         Footprint() {
             setName("Building footprint");
-            setPreferredSize(new Dimension(560, 370));
+            setToolTipText("");
             addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseClicked(MouseEvent event) {
+                    if (!javax.swing.SwingUtilities.isLeftMouseButton(event)) {
+                        return;
+                    }
+                    if (pancakeView.isSelected()) {
+                        for (var layer : layers) {
+                            if (layer.bounds().contains(event.getPoint())) {
+                                var hex = layer.cells().entrySet().stream()
+                                      .filter(cell -> cell.getValue().contains(event.getPoint()))
+                                      .map(Map.Entry::getKey).findFirst()
+                                      .orElse(layer.cells().containsKey(editor.selectedHex())
+                                            ? editor.selectedHex() : layer.cells().keySet().iterator().next());
+                                topView.setSelected(true);
+                                editor.selectLocation(hex, entity().getBldgClass() == IBuilding.BRIDGE ? 0 : layer.level());
+                                return;
+                            }
+                        }
+                        return;
+                    }
                     for (var cell : cells.entrySet()) {
                         if (cell.getValue().contains(event.getPoint())) {
                             CubeCoords selected = cell.getKey();
@@ -510,46 +558,186 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         }
 
         @Override
+        public String getToolTipText(MouseEvent event) {
+            if (pancakeView.isSelected()) {
+                return layers.stream().filter(layer -> layer.bounds().contains(event.getPoint()))
+                      .map(layer -> "Level: " + entity().getLevelLabel(layer.level()) + " — click to open in top view")
+                      .findFirst().orElse(null);
+            }
+            return cells.entrySet().stream().filter(cell -> cell.getValue().contains(event.getPoint()))
+                  .map(cell -> editor.hexLabel(cell.getKey()) + "/" + entity().getLevelLabel(displayedLevel(cell.getKey())))
+                  .findFirst().orElse(null);
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            if (editor == null || !pancakeView.isSelected()) {
+                return new Dimension(560, 370);
+            }
+            var bounds = pancakeBounds();
+            int height = (int) Math.ceil(BuildingConstruction.mapLevels(entity()).size()
+                  * (bounds.getHeight() * pancakeSize(bounds) + 44) + 20);
+            return new Dimension(560, height);
+        }
+
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return new Dimension(560, 370);
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) {
+            return 24;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) {
+            return Math.max(24, (orientation == SwingConstants.VERTICAL ? visible.height : visible.width) - 24);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return !pancakeView.isSelected() || (getParent() != null && getParent().getHeight() >= getPreferredSize().height);
+        }
+
+        @Override
         protected void paintComponent(Graphics graphics) {
             super.paintComponent(graphics);
             Graphics2D g = (Graphics2D) graphics.create();
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            cells.clear();
+            layers.clear();
+            if (pancakeView.isSelected()) {
+                paintPancake(g);
+            } else {
+                paintTop(g);
+            }
+            g.dispose();
+        }
+
+        private void paintTop(Graphics2D g) {
             List<CubeCoords> hexes = entity().getInternalBuilding().getCoordsList();
             var visible = new LinkedHashSet<>(hexes);
             hexes.forEach(hex -> visible.addAll(hex.neighbors()));
-            var labels = BuildingUtil.sheetGrid(hexes);
-            // Keep the construction origin fixed; recentering the sheet grid here makes additions jump.
-            // Reserve three rings so the first two additions and their neighbors do not change the scale.
-            double width = 11;
-            double height = 7;
+            // Keep the construction origin and the first two added rings fixed while editing.
+            double width = 11, height = 7;
             for (CubeCoords hex : visible) {
                 width = Math.max(width, 3 * Math.abs(hex.q()) + 2);
                 height = Math.max(height, 2 * Math.abs(hex.r() + hex.q() / 2) + 1);
             }
             double size = Math.max(1, Math.min((getWidth() - 30.0) / width,
                   (getHeight() - 30.0) / (Math.sqrt(3) * height)));
-            double centerX = getWidth() / 2.0;
-            double centerY = getHeight() / 2.0;
-            cells.clear();
-            for (CubeCoords hex : visible) {
-                double x = centerX + hex.q() * 1.5 * size;
-                double y = centerY + size * Math.sqrt(3) * (hex.r() + hex.q() / 2);
-                Polygon polygon = new Polygon();
-                for (int i = 0; i < 6; i++) {
-                    polygon.addPoint((int) (x + size * Math.cos(i * Math.PI / 3)),
-                          (int) (y + size * Math.sin(i * Math.PI / 3)));
+            var transform = new AffineTransform(size, 0, 0, size, getWidth() / 2.0, getHeight() / 2.0);
+            cells.putAll(paintHexes(g, List.copyOf(visible), editor.selectedFloor(), transform, size, false));
+        }
+
+        private Rectangle2D pancakeBounds() {
+            var hexes = entity().getInternalBuilding().getCoordsList();
+            double minX = Double.POSITIVE_INFINITY, minY = Double.POSITIVE_INFINITY;
+            double maxX = Double.NEGATIVE_INFINITY, maxY = Double.NEGATIVE_INFINITY;
+            for (var hex : hexes) {
+                double y = Math.sqrt(3) * (hex.r() + hex.q() / 2);
+                double x = 1.5 * hex.q() - .35 * y;
+                minX = Math.min(minX, x - 1.35);
+                maxX = Math.max(maxX, x + 1.35);
+                minY = Math.min(minY, .38 * y - .38);
+                maxY = Math.max(maxY, .38 * y + .38);
+            }
+            return new Rectangle2D.Double(minX, minY, maxX - minX, maxY - minY);
+        }
+
+        private double pancakeSize(Rectangle2D bounds) {
+            int width = getParent() == null ? getWidth() : getParent().getWidth();
+            return Math.max(1, Math.min(56, ((width > 0 ? width : 560) - 48) / bounds.getWidth()));
+        }
+
+        private void paintPancake(Graphics2D g) {
+            var bounds = pancakeBounds();
+            double size = pancakeSize(bounds), step = bounds.getHeight() * size + 44;
+            var levels = BuildingConstruction.mapLevels(entity());
+            double top = Math.max(10, (getHeight() - levels.size() * step) / 2);
+            double x = (getWidth() - bounds.getWidth() * size) / 2 - bounds.getX() * size;
+            for (int index = levels.size() - 1; index >= 0; index--) {
+                int level = levels.get(index);
+                double y = top + index * step;
+                var hit = new Rectangle2D.Double(12, y, Math.max(1, getWidth() - 24), step - 6);
+                if (level == displayedLevel(editor.selectedHex())) {
+                    g.setColor(new Color(65, 125, 190));
+                    g.setStroke(new BasicStroke(1.5f));
+                    g.drawRoundRect(12, (int) y, Math.max(1, getWidth() - 24), (int) step - 6, 8, 8);
                 }
+                var hexes = entity().getInternalBuilding().getCoordsList().stream()
+                      .filter(hex -> BuildingConstruction.occupiesMapLevel(entity(), hex, level)).toList();
+                g.setColor(getForeground());
+                g.drawString("Level: " + entity().getLevelLabel(level), 24, (float) y + 18);
+                String count = hexes.stream().mapToLong(hex -> equipmentCount(hex, level)).sum() + " equipped";
+                g.drawString(count, getWidth() - 24 - g.getFontMetrics().stringWidth(count), (float) y + 18);
+                var transform = new AffineTransform(size, 0, -.35 * size, .38 * size,
+                      x, y + 32 - bounds.getY() * size);
+                var polygons = paintHexes(g, hexes, level, transform, size, true);
+                layers.add(new Layer(level, hit, polygons));
+                // Outgoing shafts cover this floor; the next higher floor then covers the incoming shafts.
+                if (index > 0) {
+                    int upper = levels.get(index - 1);
+                    g.setColor(Color.decode(BuildingMap.Feature.ELEVATOR.color));
+                    g.setStroke(new BasicStroke(2f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10f,
+                          new float[] { 4f, 4f }, 0f));
+                    for (var lift : entity().getDesign().getElevators()) {
+                        if (lift.reaches(level) && lift.reaches(upper)
+                              && BuildingConstruction.occupiesMapLevel(entity(), lift.hex(), level)
+                              && BuildingConstruction.occupiesMapLevel(entity(), lift.hex(), upper)) {
+                            var center = center(transform, lift.hex());
+                            for (int side : new int[] { -1, 1 }) {
+                                double edge = center.getX() + side * size;
+                                g.draw(new java.awt.geom.Line2D.Double(edge, center.getY(), edge, center.getY() - step));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private Point2D center(AffineTransform transform, CubeCoords hex) {
+            return transform.transform(new Point2D.Double(1.5 * hex.q(), Math.sqrt(3) * (hex.r() + hex.q() / 2)), null);
+        }
+
+        private long equipmentCount(CubeCoords hex, int level) {
+            int floor = entity().getBldgClass() == IBuilding.BRIDGE ? 0 : level;
+            return entity().getEquipmentInHex(hex).stream().filter(mount -> BuildingConstruction.equipmentPositions(entity(), mount)
+                  .stream().anyMatch(position -> position.hex().equals(hex) && position.level() == floor)).count();
+        }
+
+        private Map<CubeCoords, Polygon> paintHexes(Graphics2D g, List<CubeCoords> visible, int floor,
+              AffineTransform transform, double size, boolean pancake) {
+            var polygons = new LinkedHashMap<CubeCoords, Polygon>();
+            var hexes = entity().getInternalBuilding().getCoordsList();
+            var labels = BuildingUtil.sheetGrid(hexes);
+            for (var hex : visible) {
+                var center = center(transform, hex);
+                double x = center.getX(), y = center.getY();
+                var polygon = new Polygon();
+                for (int i = 0; i < 6; i++) {
+                    var point = transform.deltaTransform(new Point2D.Double(Math.cos(i * Math.PI / 3), Math.sin(i * Math.PI / 3)), null);
+                    polygon.addPoint((int) (x + point.getX()), (int) (y + point.getY()));
+                }
+                polygons.put(hex, polygon);
                 boolean occupied = hexes.contains(hex);
-                int displayedLevel = displayedLevel(hex);
-                var features = occupied ? BuildingMap.features(entity(), hex, displayedLevel) : List.<BuildingMap.Feature>of();
+                int level = pancake ? floor : displayedLevel(hex);
+                boolean selected = occupied && hex.equals(editor.selectedHex()) && level == displayedLevel(editor.selectedHex());
+                var features = occupied ? BuildingMap.features(entity(), hex, level) : List.<BuildingMap.Feature>of();
                 var fill = BuildingMap.fill(features);
-                g.setColor(fill != null ? Color.decode(fill.color) : hex.equals(editor.selectedHex()) ? new Color(180, 210, 240)
+                g.setColor(fill != null ? Color.decode(fill.color) : selected ? new Color(180, 210, 240)
                       : occupied ? new Color(230, 230, 230) : Color.WHITE);
                 g.fill(polygon);
                 boolean wall = occupied && BuildingConstruction.usesHexsides(entity());
                 g.setStroke(new BasicStroke(occupied && !wall ? 2f : 1f));
                 g.setColor(occupied && !wall ? Color.BLACK : Color.GRAY);
-                if (fill != null && hex.equals(editor.selectedHex())) {
+                if (fill != null && selected) {
                     g.setStroke(new BasicStroke(3f));
                     g.setColor(new Color(65, 125, 190));
                 }
@@ -558,33 +746,33 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                 String symbols = features.stream().filter(feature -> !feature.glyph.isBlank()).map(feature -> feature.glyph)
                       .collect(java.util.stream.Collectors.joining(" "));
                 String coordinate = editor.absoluteCoordinates() ? BuildingUtil.absoluteHexLabel(hex) : labels.label(hex);
-                String text = occupied ? (symbols.isEmpty() ? "" : symbols + " ") + coordinate + "/" + BuildingUtil.levelLabel(entity(), displayedLevel) : "+";
+                String text = occupied ? (symbols.isEmpty() ? "" : symbols + " ") + coordinate + "/" + entity().getLevelLabel(level, true) : "+";
+                long count = occupied ? equipmentCount(hex, level) : 0;
+                if (pancake && count > 0) {
+                    text += " · " + count;
+                }
                 var font = g.getFont();
                 int textWidth = g.getFontMetrics().stringWidth(text);
                 if (occupied && textWidth > size * 1.6) {
                     g.setFont(font.deriveFont((float) (font.getSize2D() * size * 1.6 / textWidth)));
                 }
-                g.drawString(text, (float) (x - g.getFontMetrics().stringWidth(text) / 2.0), (float) y);
+                g.drawString(text, (float) (x - g.getFontMetrics().stringWidth(text) / 2.0), (float) (y + (pancake ? 3 : 0)));
                 g.setFont(font);
-                if (occupied) {
-                    long count = entity().getEquipmentInHex(hex).stream().filter(m -> BuildingConstruction.equipmentPositions(entity(), m)
-                          .stream().anyMatch(p -> p.hex().equals(hex) && p.level() == editor.selectedFloor())).count();
+                if (occupied && !pancake) {
                     String equipment = count + " items";
                     g.drawString(equipment, (float) (x - g.getFontMetrics().stringWidth(equipment) / 2.0), (float) (y + 12));
                 }
-                cells.put(hex, polygon);
             }
-            // Door markers follow all hex fills so neighboring cells cannot erase an edge symbol.
+            // Decorations follow every fill so adjacent hexes cannot erase edge symbols.
             for (var door : entity().getDesign().getDoors()) {
-                if (editor.selectedFloor() < door.position().level() || editor.selectedFloor() >= door.position().level() + door.height()) {
+                int level = pancake ? floor : displayedLevel(door.position().hex());
+                var polygon = polygons.get(door.position().hex());
+                if (polygon == null || door.facing() < 0 || door.facing() > 5 || level < door.position().level()
+                      || level >= door.position().level() + door.height()) {
                     continue;
                 }
-                var polygon = cells.get(door.position().hex());
-                if (polygon == null || door.facing() < 0 || door.facing() > 5) {
-                    continue;
-                }
-                double x = centerX + door.position().hex().q() * 1.5 * size;
-                double y = centerY + size * Math.sqrt(3) * (door.position().hex().r() + door.position().hex().q() / 2);
+                var center = center(transform, door.position().hex());
+                double x = center.getX(), y = center.getY();
                 int a = (door.facing() + 4) % 6, b = (a + 1) % 6;
                 var triangle = new Polygon();
                 for (var point : BuildingMap.doorPoints(new double[] { polygon.xpoints[a] - x, polygon.ypoints[a] - y },
@@ -597,22 +785,23 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                 g.setColor(Color.BLACK);
                 g.draw(triangle);
             }
-            // Draw occupied sides last, so adjacent hex fills cannot cover them.
             if (BuildingConstruction.usesHexsides(entity())) {
                 g.setColor(Color.BLACK);
-                g.setStroke(new BasicStroke(4f));
-                for (CubeCoords hex : hexes) {
-                    Polygon polygon = cells.get(hex);
+                g.setStroke(new BasicStroke(pancake ? 3f : 4f));
+                for (var hex : hexes) {
+                    var polygon = polygons.get(hex);
+                    if (polygon == null) {
+                        continue;
+                    }
                     for (int side = 0; side < 6; side++) {
                         if ((entity().getDesign().wallSides(hex) & (1 << side)) != 0) {
-                            int a = (side + 4) % 6;
-                            int b = (a + 1) % 6;
+                            int a = (side + 4) % 6, b = (a + 1) % 6;
                             g.drawLine(polygon.xpoints[a], polygon.ypoints[a], polygon.xpoints[b], polygon.ypoints[b]);
                         }
                     }
                 }
             }
-            g.dispose();
+            return polygons;
         }
     }
 
