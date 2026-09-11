@@ -712,7 +712,7 @@ public final class CConfig {
         } else if (ui instanceof WSMainUI) {
             return GUI_WS_MAIN_UI_WINDOW;
         } else if (ui instanceof HHWMainUI) {
-            return GUI_WS_MAIN_UI_WINDOW;
+            return GUI_HHW_MAIN_UI_WINDOW;
         } else if (ui instanceof BuildingMainUI) {
             return GUI_BUILDING_MAIN_UI_WINDOW;
         } else if (ui instanceof MegaMekLabTabbedUI) {
