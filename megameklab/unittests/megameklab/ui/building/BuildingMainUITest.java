@@ -54,6 +54,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTabbedPane;
@@ -591,21 +592,12 @@ class BuildingMainUITest {
             assertTrue(report.getText().contains("Construction checks pass"));
             var tabs = (JTabbedPane) SwingUtilities.getAncestorOfClass(JTabbedPane.class,
                   (JTable) find(editor, "Building equipment"));
-            tabs.setSelectedIndex(3);
+            tabs.setSelectedIndex(4);
             render(editor, "building-construction-services");
-            var services = (JTabbedPane) find(editor, "Building service sections");
-            assertEquals(3, services.getTabCount());
-            assertEquals("Capacity, crew, power & validation", services.getTitleAt(0));
-            assertEquals("Large Doors", services.getTitleAt(1));
-            assertEquals("Industrial Elevators", services.getTitleAt(2));
-            for (int index = 0; index < 3; index++) {
-                services.setSelectedIndex(index);
-                for (int panelIndex = 0; panelIndex < 3; panelIndex++) {
-                    assertEquals(index == panelIndex, services.getComponentAt(panelIndex).isVisible());
-                }
-            }
-            assertEquals(services, SwingUtilities.getAncestorOfClass(JTabbedPane.class, find(editor, "Building doors")));
-            services.setSelectedIndex(0);
+            var services = (JPanel) find(editor, "Building service sections");
+            assertEquals(2, services.getComponentCount());
+            assertTrue(services.isAncestor(find(editor, "Building doors")));
+            assertTrue(services.isAncestor(find(editor, "Building elevators")));
             editor.undo();
             assertEquals(BuildingDesign.Ceiling.STANDARD, editor.getEntity().getDesign().getCeiling());
             editor.redo();
