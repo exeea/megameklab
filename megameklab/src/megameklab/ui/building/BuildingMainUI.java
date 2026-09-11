@@ -214,7 +214,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
             selectedHex = hexes.getFirst();
         }
         int height = getEntity().getInternalBuilding().getHeight(selectedHex);
-        selectedFloor = Math.clamp(selectedFloor, 0, height - 1);
+        selectedFloor = Math.max(0, Math.min(selectedFloor, height - 1));
         hexSelector.removeAllItems();
         hexes.forEach(hex -> hexSelector.addItem(hexLabel(hex)));
         hexSelector.setSelectedIndex(hexes.indexOf(selectedHex));
