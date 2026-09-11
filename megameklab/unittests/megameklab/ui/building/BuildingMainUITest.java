@@ -596,8 +596,8 @@ class BuildingMainUITest {
             render(editor, "building-construction-services");
             var services = (JPanel) find(editor, "Building service sections");
             assertEquals(2, services.getComponentCount());
-            assertTrue(services.isAncestor(find(editor, "Building doors")));
-            assertTrue(services.isAncestor(find(editor, "Building elevators")));
+            assertTrue(services.isAncestorOf(find(editor, "Building doors")));
+            assertTrue(services.isAncestorOf(find(editor, "Building elevators")));
             editor.undo();
             assertEquals(BuildingDesign.Ceiling.STANDARD, editor.getEntity().getDesign().getCeiling());
             editor.redo();
