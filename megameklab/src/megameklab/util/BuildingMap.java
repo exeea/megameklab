@@ -35,14 +35,18 @@ package megameklab.util;
 
 import java.util.ArrayList;
 import java.util.List;
+import megamek.common.bays.Bay;
 import megamek.common.board.CubeCoords;
 import megamek.common.equipment.BuildingEquipmentType;
 import megamek.common.equipment.Mounted;
 import megamek.common.units.BuildingConstruction;
+import megamek.common.units.BuildingDesign;
 import megamek.common.units.AbstractBuildingEntity;
 
 /** Feature identity shared by the editing map and printed structure maps. */
 public final class BuildingMap {
+    private static final List<Feature> FILL_PRIORITY = List.of(Feature.ELEVATOR, Feature.BAY, Feature.DECK, Feature.TURRET);
+
     private BuildingMap() { }
 
     public enum Feature {
@@ -61,31 +65,91 @@ public final class BuildingMap {
     }
 
     public static List<Feature> features(AbstractBuildingEntity building, CubeCoords hex, int level) {
-        List<Feature> result = new ArrayList<>();
-        if (building.getTransportBays().stream().flatMap(bay -> BuildingConstruction.baySpaces(building, bay).stream())
-              .anyMatch(space -> space.tons() > 0 && space.position().hex().equals(hex) && space.position().level() == level)) {
+        return features(building, hex, level, building.getDesign().getMapDoors());
+    }
+
+    public static List<Feature> features(AbstractBuildingEntity building, CubeCoords hex, int level,
+          List<BuildingDesign.Door> mapDoors) {
+        List<Feature> result = new ArrayList<>(5);
+        boolean bay = false;
+        for (Bay transportBay : building.getTransportBays()) {
+            for (BuildingDesign.Space space : BuildingConstruction.baySpaces(building, transportBay)) {
+                if (space.tons() > 0 && space.position().hex().equals(hex) && space.position().level() == level) {
+                    bay = true;
+                    break;
+                }
+            }
+            if (bay) {
+                break;
+            }
+        }
+        if (bay) {
             result.add(Feature.BAY);
         }
-        if (building.getDesign().getElevators().stream().anyMatch(lift -> lift.hex().equals(hex) && lift.reaches(level))) {
+
+        boolean elevator = false;
+        for (BuildingDesign.Elevator lift : building.getDesign().getElevators()) {
+            if (lift.hex().equals(hex) && lift.reaches(level)) {
+                elevator = true;
+                break;
+            }
+        }
+        if (elevator) {
             result.add(Feature.ELEVATOR);
         }
+
         if (level == building.getInternalBuilding().getHeight(hex) - 1) {
-            if (building.getEquipmentInHex(hex).stream().anyMatch(mount -> mount.getType() instanceof BuildingEquipmentType facility && facility.getFacility().isRoof())) {
+            boolean deck = false;
+            boolean turret = false;
+            for (Mounted<?> mount : building.getEquipment()) {
+                if (mount.isOneShotAmmo() || mount.isWeaponGroup()) {
+                    continue;
+                }
+                boolean inHex = false;
+                for (BuildingDesign.Position position : BuildingConstruction.equipmentPositions(building, mount)) {
+                    if (position.hex().equals(hex)) {
+                        inHex = true;
+                        break;
+                    }
+                }
+                if (!inHex) {
+                    continue;
+                }
+                if (mount.getType() instanceof BuildingEquipmentType facility && facility.getFacility().isRoof()) {
+                    deck = true;
+                }
+                if (mount.isSponsonTurretMounted()) {
+                    turret = true;
+                }
+                if (deck && turret) {
+                    break;
+                }
+            }
+            if (deck) {
                 result.add(Feature.DECK);
             }
-            if (building.getEquipmentInHex(hex).stream().anyMatch(Mounted::isSponsonTurretMounted)) {
+            if (turret) {
                 result.add(Feature.TURRET);
             }
         }
-        if (building.getDesign().getMapDoors().stream().anyMatch(door -> door.position().hex().equals(hex)
-              && level >= door.position().level() && level < door.position().level() + door.height())) {
-            result.add(Feature.DOOR);
+
+        for (BuildingDesign.Door door : mapDoors) {
+            if (door.position().hex().equals(hex) && level >= door.position().level()
+                  && level < door.position().level() + door.height()) {
+                result.add(Feature.DOOR);
+                break;
+            }
         }
         return result;
     }
 
     public static Feature fill(List<Feature> features) {
-        return List.of(Feature.ELEVATOR, Feature.BAY, Feature.DECK, Feature.TURRET).stream().filter(features::contains).findFirst().orElse(null);
+        for (Feature feature : FILL_PRIORITY) {
+            if (features.contains(feature)) {
+                return feature;
+            }
+        }
+        return null;
     }
 
     /** Center the triangle on its hexside; affine projection preserves that alignment. */

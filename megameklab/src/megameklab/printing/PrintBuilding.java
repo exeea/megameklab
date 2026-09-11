@@ -60,6 +60,8 @@ import megamek.common.units.MobileStructure;
 import megamek.common.units.IBuilding;
 import megameklab.util.BuildingUtil;
 import org.w3c.dom.Element;
+import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
 import org.w3c.dom.svg.SVGRectElement;
 
 /** Full-page structure record sheet, using the same template/print pipeline as other entities. */
@@ -92,7 +94,7 @@ public class PrintBuilding extends PrintEntity {
         super.processImage(pageNum, pageFormat);
         setTextField("pageNumber", "Page " + (pageNum + 1) + " / " + getPageCount());
         // Keep the selected sheet font, with a PDF-safe sans-serif fallback when it is not installed.
-        var textElements = getSVGDocument().getElementsByTagName("text");
+        NodeList textElements = getSVGDocument().getElementsByTagName("text");
         for (int i = 0; i < textElements.getLength(); i++) {
             ((Element) textElements.item(i)).setAttribute("font-family", getTypeface() + ",Helvetica,sans-serif");
         }
@@ -155,8 +157,8 @@ public class PrintBuilding extends PrintEntity {
     protected void drawArmor() {
         Rectangle2D box = getRectBBox((SVGRectElement) getSVGDocument().getElementById("buildingProtection"));
         Element canvas = (Element) getSVGDocument().getElementById("buildingProtection").getParentNode();
-        var allProtection = protectionRows();
-        var protection = allProtection.stream().skip(currentPage * 36L).limit(36).toList();
+        List<Protection> allProtection = protectionRows();
+        List<Protection> protection = allProtection.stream().skip(currentPage * 36L).limit(36).toList();
         int rows = Math.max(1, (protection.size() + 1) / 2);
         double step = Math.min(12, (box.getHeight() - 16) / rows);
         float font = (float) Math.min(6.6, step * .65);
@@ -175,7 +177,7 @@ public class PrintBuilding extends PrintEntity {
                 if (row >= rows || index >= protection.size()) {
                     continue;
                 }
-                var entry = protection.get(index);
+                Protection entry = protection.get(index);
                 int loc = building.getInternalBuilding().getOriginalCoordsList().indexOf(entry.hex())
                       * building.getInternalBuilding().getBuildingHeight();
                 text(canvas, x + 13, y, 26, entry.label(), font, "middle", "normal");
@@ -192,10 +194,10 @@ public class PrintBuilding extends PrintEntity {
     private record Protection(CubeCoords hex, String label) { }
 
     private List<Protection> protectionRows() {
-        var hexes = building.getInternalBuilding().getOriginalCoordsList();
-        var grid = BuildingUtil.sheetGrid(hexes);
+        List<CubeCoords> hexes = building.getInternalBuilding().getOriginalCoordsList();
+        BuildingUtil.SheetGrid grid = BuildingUtil.sheetGrid(hexes);
         List<Protection> result = new ArrayList<>();
-        for (var hex : hexes) {
+        for (CubeCoords hex : hexes) {
             if (BuildingConstruction.usesHexsides(building)) {
                 for (int side = 0; side < 6; side++) {
                     if ((building.getDesign().wallSides(hex) & (1 << side)) != 0) {
@@ -214,22 +216,23 @@ public class PrintBuilding extends PrintEntity {
         Element region = getSVGDocument().getElementById("structureMap");
         Rectangle2D box = getRectBBox((SVGRectElement) region);
         List<CubeCoords> hexes = building.getInternalBuilding().getOriginalCoordsList();
-        var grid = BuildingUtil.sheetGrid(hexes);
+        BuildingUtil.SheetGrid grid = BuildingUtil.sheetGrid(hexes);
         Map<Coords, CubeCoords> occupied = new LinkedHashMap<>();
         hexes.forEach(hex -> occupied.put(grid.position(hex), hex));
         double width = 30 * (grid.columns() - 1) + 40 + 6 * (grid.rows() - 1);
         double height = 12 * (grid.rows() + .5);
-        var mapLevels = BuildingConstruction.mapLevels(building).stream().skip((long) currentPage * LEVELS_PER_PAGE)
+          List<Integer> mapLevels = BuildingConstruction.mapLevels(building).stream().skip((long) currentPage * LEVELS_PER_PAGE)
               .limit(LEVELS_PER_PAGE).toList();
         int levels = mapLevels.size();
         if (levels <= 0) {
             return;
         }
+        List<BuildingDesign.Door> mapDoors = building.getDesign().getMapDoors();
         Map<BuildingDesign.Position, List<Feature>> features = new LinkedHashMap<>();
-        var symbols = new LinkedHashSet<Feature>();
-        for (var hex : hexes) {
+        LinkedHashSet<Feature> symbols = new LinkedHashSet<>();
+        for (CubeCoords hex : hexes) {
             for (int level : mapLevels) {
-                var values = BuildingMap.features(building, hex, level);
+            List<Feature> values = BuildingMap.features(building, hex, level, mapDoors);
                 features.put(new BuildingDesign.Position(hex, level), values);
                 symbols.addAll(values);
             }
@@ -255,8 +258,8 @@ public class PrintBuilding extends PrintEntity {
                     boolean present = hex != null && BuildingConstruction.occupiesMapLevel(building, hex, level)
                           && BuildingConstruction.segmentsInHex(building, hex) > 0;
                     boolean wall = BuildingConstruction.usesHexsides(building);
-                    var cellFeatures = present ? features.get(new BuildingDesign.Position(hex, level)) : List.<Feature>of();
-                    var fill = BuildingMap.fill(cellFeatures);
+                    List<Feature> cellFeatures = present ? features.get(new BuildingDesign.Position(hex, level)) : List.of();
+                    Feature fill = BuildingMap.fill(cellFeatures);
                     double staggeredRow = row + (column & 1) * .5;
                     double x = (column * 30 - staggeredRow * 6 + 20 + 6 * (grid.rows() - 1)) * scale;
                     double y = (staggeredRow * 12 + 6) * scale;
@@ -272,8 +275,8 @@ public class PrintBuilding extends PrintEntity {
                         if (wall) {
                             for (int side = 0; side < 6; side++) {
                                 if ((building.getDesign().wallSides(hex) & (1 << side)) != 0) {
-                                    var a = corners[(side + 1) % 6];
-                                    var b = corners[(side + 2) % 6];
+                                    double[] a = corners[(side + 1) % 6];
+                                    double[] b = corners[(side + 2) % 6];
                                     element(annotations, "line", "x1", Double.toString(x + a[0] * scale), "y1", Double.toString(y + a[1] * scale),
                                           "x2", Double.toString(x + b[0] * scale), "y2", Double.toString(y + b[1] * scale),
                                           "stroke", "#000", "stroke-width", "1.8", "data-building-side", Integer.toString(side),
@@ -283,14 +286,14 @@ public class PrintBuilding extends PrintEntity {
                         }
                         polygon.setAttribute("data-building-hex", grid.label(hex));
                         polygon.setAttribute("data-building-features", cellFeatures.stream().map(symbol -> symbol.name().toLowerCase()).collect(Collectors.joining(" ")));
-                        var glyphs = cellFeatures.stream().filter(symbol -> symbol != Feature.DOOR).toList();
-                        for (var door : building.getDesign().getMapDoors()) {
+                        List<Feature> glyphs = cellFeatures.stream().filter(symbol -> symbol != Feature.DOOR).toList();
+                        for (BuildingDesign.Door door : mapDoors) {
                             if (door.facing() < 0 || door.facing() > 5 || !door.position().hex().equals(hex) || level < door.position().level()
                                   || level >= door.position().level() + door.height()) {
                                 continue;
                             }
-                            var a = corners[(door.facing() + 1) % 6];
-                            var b = corners[(door.facing() + 2) % 6];
+                            double[] a = corners[(door.facing() + 1) % 6];
+                            double[] b = corners[(door.facing() + 2) % 6];
                             double[][] arrow = BuildingMap.doorPoints(a, b);
                             Element marker = mapPolygon(annotations, arrow, x, y, scale, "#fff");
                             marker.setAttribute("data-building-symbol", "door");
@@ -319,7 +322,7 @@ public class PrintBuilding extends PrintEntity {
             Element key = element((Element) region.getParentNode(), "g", "class", "building-map-key", "transform",
                   "translate(%s %s)".formatted(box.getX() + 8, box.getY() + headerGap + levels * layerHeight + 6));
             int index = 0;
-            for (var symbol : symbols) {
+            for (Feature symbol : symbols) {
                 double x = index % keyColumns * ((box.getWidth() - 16) / keyColumns), y = index / keyColumns * 16;
                 mapKeySymbol(key, symbol, x + 6, y + 4);
                 text(key, x + 17, y + 6, box.getWidth() / keyColumns - 22, symbol.label, 6.5f, "start", "normal");
@@ -342,7 +345,7 @@ public class PrintBuilding extends PrintEntity {
 
     private Element mapPolygon(Element parent, double[][] points, double x, double y, double scale, String fill) {
         StringBuilder polygon = new StringBuilder();
-        for (var point : points) {
+        for (double[] point : points) {
             polygon.append(x + point[0] * scale).append(',').append(y + point[1] * scale).append(' ');
         }
         return element(parent, "polygon", "points", polygon.toString(), "fill", fill, "stroke", "#000", "stroke-width", ".8");
@@ -399,10 +402,10 @@ public class PrintBuilding extends PrintEntity {
                       .forEach((size, count) -> entries.add(note("equipment-size", "Size " + size + " (×" + count + ")",
                             BuildingUtil.locationLabel(building, first.getLocation()))));
             }
-            for (var mount : group) {
-                var spaces = building.getDesign().getEquipmentSpace().get(mount);
+            for (Mounted<?> mount : group) {
+                List<BuildingDesign.Position> spaces = building.getDesign().getEquipmentSpace().get(mount);
                 if (spaces != null && !spaces.isEmpty()) {
-                    for (var position : spaces) {
+                    for (BuildingDesign.Position position : spaces) {
                         entries.add(note("space-" + building.getEquipmentNum(mount), "Mass share: %.2f t".formatted(mount.getTonnage() / spaces.size()),
                               BuildingUtil.locationLabel(building, BuildingConstruction.location(building, position))));
                     }
@@ -417,7 +420,7 @@ public class PrintBuilding extends PrintEntity {
             entries.add(new InventoryGroup("bay-" + bay.getBayNumber(), -1,
                   List.<String[]>of(new String[] { "1", name, "—", "", "", "", "", "" }), false));
             if (building.getDesign().getBaySpace().containsKey(bay)) {
-                for (var space : BuildingConstruction.baySpaces(building, bay)) {
+                for (BuildingDesign.Space space : BuildingConstruction.baySpaces(building, bay)) {
                     entries.add(note("bay-space", "Space: %.2f t".formatted(space.tons()),
                           BuildingUtil.locationLabel(building, BuildingConstruction.location(building, space.position()))));
                 }
@@ -445,7 +448,7 @@ public class PrintBuilding extends PrintEntity {
     }
 
     private void appendDesign(List<InventoryGroup> entries) {
-        var design = building.getDesign();
+        BuildingDesign design = building.getDesign();
         entries.add(note("classification", (building.getBldgClass() == IBuilding.TENT || building.getBldgClass() == IBuilding.FENCE
               ? "" : building.getBuildingType() + " / ") + (building.getBldgClass() == IBuilding.STANDARD
                     ? "Standard" : IBuilding.className(building.getBldgClass())), ""));
@@ -479,12 +482,12 @@ public class PrintBuilding extends PrintEntity {
         if (design.getSite() != BuildingDesign.Site.SURFACE) {
             entries.add(note("site", design.getSite() + "; cover " + design.getDepth() + " levels", "All"));
         }
-        for (var door : design.getMapDoors()) {
+        for (BuildingDesign.Door door : design.getMapDoors()) {
             String side = BuildingUtil.facingLabel(door.facing());
             entries.add(note("door", "Door " + side + "; " + door.height() + " levels high",
                   BuildingUtil.locationLabel(building, BuildingConstruction.location(building, door.position()))));
         }
-        for (var lift : design.getElevators()) {
+        for (BuildingDesign.Elevator lift : design.getElevators()) {
             String hex = BuildingUtil.sheetGrid(building.getInternalBuilding().getOriginalCoordsList()).label(lift.hex());
             entries.add(note("elevator", "Elevator: " + lift.capacity() + " t", hex));
             lift.exits().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(exit -> {
@@ -507,15 +510,15 @@ public class PrintBuilding extends PrintEntity {
         if (plannedInventory != null) {
             return plannedInventory;
         }
-        var template = getSVGDocument() == null ? loadTemplate(getFirstPage(), new PageFormat(), false) : getSVGDocument();
+        Document template = getSVGDocument() == null ? loadTemplate(getFirstPage(), new PageFormat(), false) : getSVGDocument();
         Rectangle2D box = getRectBBox((SVGRectElement) template.getElementById(INVENTORY));
         double available = box.getHeight() - 14;
         int capacity = (int) Math.floor(available / (InventoryWriter.MIN_FONT_SIZE * InventoryWriter.MIN_LINE_HEIGHT_TO_FONT_SIZE));
         List<InventoryPage> pages = new ArrayList<>();
         List<InventoryGroup> page = new ArrayList<>();
         int rows = 0;
-        for (var entry : inventoryEntries()) {
-            var wrapped = wrapInventory(List.of(entry), InventoryWriter.MIN_FONT_SIZE, box.getWidth()).getFirst();
+        for (InventoryGroup entry : inventoryEntries()) {
+            InventoryGroup wrapped = wrapInventory(List.of(entry), InventoryWriter.MIN_FONT_SIZE, box.getWidth()).getFirst();
             int size = wrapped.rows().size();
             if (rows + size > capacity && !page.isEmpty()) {
                 pages.add(fitInventory(page, box));
@@ -548,9 +551,9 @@ public class PrintBuilding extends PrintEntity {
 
     private List<InventoryGroup> wrapInventory(List<InventoryGroup> groups, float font, double width) {
         List<InventoryGroup> result = new ArrayList<>();
-        for (var group : groups) {
+        for (InventoryGroup group : groups) {
             List<String[]> rows = new ArrayList<>();
-            for (var values : group.rows()) {
+            for (String[] values : group.rows()) {
                 boolean note = values[0].isEmpty() && values[2].isEmpty() && values[3].isEmpty();
                 double nameWidth = width * (note ? .90 : .34);
                 String[] row = values.clone();
