@@ -108,6 +108,7 @@ import megameklab.util.UnitUtil;
 class BuildingStructureTab extends JPanel implements BuildListener {
     private final BuildingMainUI editor;
     private final BasicInfoView basicInfo;
+    private final JComboBox<String> structureType = new JComboBox<>(new String[] { "Structure", "Mobile Structure" });
     private final IconView icon = new IconView();
     private final JComboBox<BuildingType> type = new JComboBox<>(new BuildingType[] {
           BuildingType.LIGHT, BuildingType.MEDIUM, BuildingType.HEAVY, BuildingType.HARDENED, BuildingType.RAIL });
@@ -168,6 +169,13 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         });
         basicInfo.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createTitledBorder("Basic Information"),
               BorderFactory.createEmptyBorder(4, 4, 4, 4)));
+        addStructureTypeField();
+        structureType.setToolTipText("Choose between a stationary structure and a mobile structure.");
+        structureType.addActionListener(event -> {
+            if (!refreshing) {
+                editor.changeStructureType(structureType.getSelectedIndex() == 1);
+            }
+        });
         icon.setFromEntity(entity());
         icon.setRefreshedListener(editor);
         icon.setBorder(BorderFactory.createCompoundBorder(icon.getBorder(), BorderFactory.createEmptyBorder(4, 4, 4, 4)));
@@ -400,6 +408,24 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         return name;
     }
 
+    private void addStructureTypeField() {
+        JLabel name = new JLabel("Structure type: ", SwingConstants.RIGHT);
+        name.setLabelFor(structureType);
+        structureType.setName("Structure type");
+        var cell = new GridBagConstraints();
+        cell.gridx = 0;
+        cell.gridy = 13;
+        cell.weightx = 1;
+        cell.fill = GridBagConstraints.HORIZONTAL;
+        cell.anchor = GridBagConstraints.EAST;
+        cell.insets = new Insets(2, 2, 2, 2);
+        basicInfo.add(name, cell);
+        cell.gridx = 1;
+        cell.weightx = 0;
+        cell.anchor = GridBagConstraints.WEST;
+        basicInfo.add(structureType, cell);
+    }
+
     private AbstractBuildingEntity entity() {
         return editor.getEntity();
     }
@@ -413,6 +439,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         basicInfo.removeListener(this);
         basicInfo.setFromEntity(entity());
         basicInfo.addListener(this);
+        structureType.setSelectedIndex(entity() instanceof MobileStructure ? 1 : 0);
         icon.refresh();
         type.setModel(new DefaultComboBoxModel<>(java.util.Arrays.stream(BuildingType.values())
               .filter(value -> TestBuilding.limits(entity(), value, entity().getBldgClass()) != null || value == entity().getBuildingType())

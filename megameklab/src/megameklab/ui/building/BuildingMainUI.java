@@ -49,6 +49,7 @@ import megamek.common.interfaces.ITechManager;
 import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.Entity;
+import megamek.common.units.MobileStructure;
 import megameklab.ui.MegaMekLabMainUI;
 import megameklab.ui.generalUnit.FluffTab;
 import megameklab.ui.generalUnit.RecordSheetPreviewPanel;
@@ -89,6 +90,15 @@ public class BuildingMainUI extends MegaMekLabMainUI {
     @Override
     public AbstractBuildingEntity getEntity() {
         return (AbstractBuildingEntity) super.getEntity();
+    }
+
+    void changeStructureType(boolean mobile) {
+        if ((getEntity() instanceof MobileStructure) == mobile) {
+            return;
+        }
+        createNewUnit(mobile ? Entity.ETYPE_MOBILE_STRUCTURE : Entity.ETYPE_BUILDING_ENTITY,
+              false, false, getEntity());
+        reloadTabs();
     }
 
     @Override
