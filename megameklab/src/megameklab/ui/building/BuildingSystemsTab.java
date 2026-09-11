@@ -65,7 +65,10 @@ class BuildingSystemsTab extends JPanel {
     private final JCheckBox heavyMetal = new JCheckBox("Heavy-metal superstructure");
     private final JCheckBox officers = new JCheckBox("Include officers for civilian operations");
     private final JCheckBox tunnel = new JCheckBox("Tunnel construction");
-    private final JCheckBox openSpace = new JCheckBox("Open-space construction (600 t total; lowest floor equipment only)");
+    private final JCheckBox openSpace = new JCheckBox("Open-space construction");
+    private final JLabel openSpaceDescription = new JLabel();
+    private final JButton portalTemplates = new JButton("Assign portal equipment templates…");
+    private final JLabel portalTemplateDescription = new JLabel("Choose the installed equipment used by each large portal template.");
     private final JCheckBox roofClearance = new JCheckBox("Roof has clearance in a larger cave");
     private final JComboBox<String> ceiling = new JComboBox<>(new String[] { "Standard", "High", "Low" });
     private final JComboBox<String> site = new JComboBox<>(new String[] { "Surface", "Underground", "Underwater" });
@@ -73,6 +76,7 @@ class BuildingSystemsTab extends JPanel {
     private final JSpinner combatHours = new JSpinner(new SpinnerNumberModel(0, 0, 24, 1));
     private final JCheckBox minimumCrew = new JCheckBox("Use minimum operating crew", true);
     private final JSpinner crewCount = new JSpinner(new SpinnerNumberModel(0, 0, Integer.MAX_VALUE, 1));
+    private final JPanel totals = new JPanel(new BorderLayout(8, 8));
     private final JTextArea report = new JTextArea();
     private final Doors doors = new Doors();
     private final JTable doorTable = new JTable(doors);
@@ -109,16 +113,20 @@ class BuildingSystemsTab extends JPanel {
         options.add(roofClearance);
         options.add(new JLabel("Underground only; at least one level above the roof permits rooftop equipment."));
         options.add(tunnel);
+        options.add(new JLabel("Hangar only; doors at connections; no equipment; structure cost ×1.875"));
         openSpace.setName("Open-space construction");
         options.add(openSpace);
-        options.add(new JLabel("Hangar only; doors at connections; no equipment; structure cost ×1.875"));
+        options.add(openSpaceDescription);
         options.add(officers);
         options.add(new JLabel("Military structures include officers automatically."));
+        options.add(portalTemplates);
+        options.add(portalTemplateDescription);
+        portalTemplates.setName("Portal equipment templates");
+        portalTemplates.addActionListener(event -> BuildingPlacementDialogs.portalTemplates(editor));
         add(options, BorderLayout.NORTH);
 
-        JPanel services = new JPanel(new GridLayout(1, 3, 8, 0));
+          JPanel services = new JPanel(new GridLayout(1, 2, 8, 8));
         services.setName("Building service sections");
-        JPanel totals = new JPanel(new BorderLayout(8, 8));
         totals.setBorder(BorderFactory.createCompoundBorder(
               BorderFactory.createTitledBorder("Capacity, crew, power & validation"),
               BorderFactory.createEmptyBorder(8, 8, 8, 8)));
@@ -136,7 +144,6 @@ class BuildingSystemsTab extends JPanel {
         report.setFont(new java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12));
         report.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         totals.add(new JScrollPane(report), BorderLayout.CENTER);
-        services.add(totals);
         services.add(doorPanel());
         services.add(elevatorPanel());
         add(services, BorderLayout.CENTER);
@@ -152,6 +159,10 @@ class BuildingSystemsTab extends JPanel {
         combatHours.addChangeListener(e -> refreshReport());
         minimumCrew.addActionListener(e -> applyCrew());
         crewCount.addChangeListener(e -> applyCrew());
+    }
+
+    JPanel getTotalsPanel() {
+        return totals;
     }
 
     private void applyCrew() {
@@ -264,7 +275,20 @@ class BuildingSystemsTab extends JPanel {
         officers.setSelected(design.hasCivilianOfficers());
         tunnel.setSelected(design.isTunnel());
         openSpace.setSelected(design.isOpenSpace());
-        openSpace.setEnabled(entity.getConstructionCFScale() == 10 || design.isOpenSpace());
+        boolean mobile = entity instanceof megamek.common.units.MobileStructure;
+        openSpace.setEnabled(entity.getConstructionCFScale() == 10 || design.isOpenSpace()
+              || mobile && entity.getBldgClass() == megamek.common.units.IBuilding.HANGAR);
+        openSpace.setText(mobile ? "Large Portal" : "Open-space construction");
+        openSpaceDescription.setText(mobile ? "Hangar with open-space construction"
+              : "600 t total; equipment on the lowest floor only");
+        openSpace.setToolTipText(mobile ? "Deploy an underground open-space Castles Brian tunnel first. Place this portal flat against its hillside entrance, facing away from the hill. Move it completely aside; other structures may enter starting next turn." : null);
+        portalTemplates.setVisible(mobile && design.isOpenSpace());
+        portalTemplateDescription.setVisible(portalTemplates.isVisible());
+        heavyMetal.setEnabled(!mobile || design.hasHeavyMetal());
+        ceiling.setEnabled(!mobile || design.getCeiling() != BuildingDesign.Ceiling.STANDARD);
+        tunnel.setEnabled(!mobile || design.isTunnel());
+        site.setEnabled(!mobile || design.getSite() != BuildingDesign.Site.SURFACE);
+        roofClearance.setEnabled(!mobile || design.hasRoofClearance());
         roofClearance.setSelected(design.hasRoofClearance());
         ceiling.setSelectedIndex(design.getCeiling().ordinal());
         site.setSelectedIndex(design.getSite().ordinal());

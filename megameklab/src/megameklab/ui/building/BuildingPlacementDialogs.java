@@ -25,7 +25,7 @@ import megamek.common.bays.Bay;
 import megamek.common.equipment.Mounted;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
-import megamek.common.units.BuildingEntity;
+import megamek.common.units.AbstractBuildingEntity;
 import megameklab.util.BuildingUtil;
 
 /** Location editors display sheet coordinates; native cube coordinates never need to be entered by hand. */
@@ -144,6 +144,80 @@ final class BuildingPlacementDialogs {
         }
     }
 
+    static void portalTemplates(BuildingMainUI editor) {
+        var entity = editor.getEntity();
+        var hexes = entity.getInternalBuilding().getOriginalCoordsList();
+        var grid = BuildingUtil.sheetGrid(hexes);
+        var labels = new ArrayList<String>();
+        labels.add("Not assigned");
+        hexes.forEach(hex -> labels.add(grid.label(hex)));
+        var hex2 = new JComboBox<>(labels.toArray(String[]::new));
+        var hex3 = new JComboBox<>(labels.toArray(String[]::new));
+        hex2.setSelectedIndex(hexes.indexOf(entity.getDesign().getPortalHex2()) + 1);
+        hex3.setSelectedIndex(hexes.indexOf(entity.getDesign().getPortalHex3()) + 1);
+        JPanel panel = new JPanel(new java.awt.GridLayout(0, 2, 8, 8));
+        panel.add(new JLabel("Portal Hex 2 equipment template"));
+        panel.add(hex2);
+        panel.add(new JLabel("Portal Hex 3 equipment template"));
+        panel.add(hex3);
+        panel.add(new JLabel("TO:AUE p.76: author identifies the template hexes."));
+        panel.add(new JLabel("Tunnel sections repeat Hex 3 then Hex 2; equipment is not generated."));
+        if (JOptionPane.showConfirmDialog(editor, panel, "Large Portal tunnel equipment", JOptionPane.OK_CANCEL_OPTION,
+              JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION) {
+            entity.getDesign().setPortalHex2(hex2.getSelectedIndex() <= 0 ? null : hexes.get(hex2.getSelectedIndex() - 1));
+            entity.getDesign().setPortalHex3(hex3.getSelectedIndex() <= 0 ? null : hexes.get(hex3.getSelectedIndex() - 1));
+            editor.scheduleRefresh();
+        }
+    }
+    static void bayDoors(BuildingMainUI editor, Bay bay) {
+        var entity = editor.getEntity();
+        var positions = java.util.stream.IntStream.range(0, entity.locations()).mapToObj(loc -> BuildingConstruction.position(entity, loc))
+              .filter(position -> position.level() < entity.getInternalBuilding().getHeight(position.hex())).distinct().toList();
+        var grid = BuildingUtil.sheetGrid(entity.getInternalBuilding().getOriginalCoordsList());
+        var labels = new ArrayList<String>();
+        labels.add("Unassigned");
+        positions.forEach(position -> labels.add(grid.label(position.hex()) + "/" + entity.getLevelLabel(position.level())));
+        var old = megamek.common.units.BuildingBayDoors.placements(entity, bay);
+        var model = new DefaultTableModel(new String[] { "Door", "Hex/Floor", "Facing" }, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) { return column > 0; }
+        };
+        for (int i = 0; i < bay.getDoors(); i++) {
+            var door = i < old.size() ? old.get(i) : null;
+            model.addRow(new Object[] { i + 1, door == null ? "Unassigned" : labels.get(positions.indexOf(door.position()) + 1),
+                  BuildingEquipmentTab.FACINGS[door == null ? 0 : door.facing()] });
+        }
+        JTable table = new JTable(model);
+        table.getColumnModel().getColumn(1).setCellEditor(new DefaultCellEditor(new JComboBox<>(labels.toArray(String[]::new))));
+        table.getColumnModel().getColumn(2).setCellEditor(new DefaultCellEditor(new JComboBox<>(BuildingEquipmentTab.FACINGS)));
+        JPanel panel = tablePanel(table, "Place this bay's doors on exterior edges. Joined modular-linkage hexes cannot use their doors.");
+        while (JOptionPane.showConfirmDialog(editor, panel, "Bay " + bay.getBayNumber() + " doors", JOptionPane.OK_CANCEL_OPTION,
+              JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION) {
+            stopEditing(table);
+            List<BuildingDesign.BayDoor> result = new ArrayList<>();
+            for (int row = 0; row < model.getRowCount(); row++) {
+                int position = labels.indexOf(model.getValueAt(row, 1).toString()) - 1;
+                int facing = java.util.Arrays.asList(BuildingEquipmentTab.FACINGS).indexOf(model.getValueAt(row, 2).toString());
+                if (position >= 0) {
+                    result.add(new BuildingDesign.BayDoor(bay.getBayNumber(), positions.get(position), facing));
+                }
+            }
+            entity.getDesign().getBayDoors().removeIf(door -> door.bayNumber() == bay.getBayNumber());
+            entity.getDesign().getBayDoors().addAll(result);
+            var issues = new ArrayList<>(megamek.common.units.BuildingBayDoors.validationIssues(entity, false));
+            if (!result.isEmpty() && result.size() != bay.getDoors()) {
+                issues.add("Assign all doors of this bay, or leave all unassigned.");
+            }
+            if (!issues.isEmpty()) {
+                entity.getDesign().getBayDoors().removeIf(door -> door.bayNumber() == bay.getBayNumber());
+                entity.getDesign().getBayDoors().addAll(old);
+                JOptionPane.showMessageDialog(editor, String.join("\n", issues));
+                continue;
+            }
+            editor.scheduleRefresh();
+            return;
+        }
+    }
     static void elevator(BuildingMainUI editor, int index) {
         var entity = editor.getEntity();
         var lifts = entity.getDesign().getElevators();
@@ -223,7 +297,7 @@ final class BuildingPlacementDialogs {
         }
     }
 
-    static int floor(BuildingEntity entity, String text) {
+    static int floor(AbstractBuildingEntity entity, String text) {
         return Math.toIntExact(("Ground".equals(text) ? 0 : Long.parseLong(text)) - BuildingConstruction.baseLevel(entity));
     }
 }

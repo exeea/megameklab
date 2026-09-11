@@ -88,6 +88,15 @@ class BuildingTransportTab extends JPanel {
             }
         });
         placement.add(allocate);
+        JButton doors = new JButton("Assign doors…");
+        doors.setName("Assign building bay doors");
+        doors.addActionListener(event -> {
+            int index = baySelector.getSelectedIndex();
+            if (index >= 0) {
+                BuildingPlacementDialogs.bayDoors(editor, editor.getEntity().getTransportBays().get(index));
+            }
+        });
+        placement.add(doors);
         add(placement, BorderLayout.SOUTH);
     }
 

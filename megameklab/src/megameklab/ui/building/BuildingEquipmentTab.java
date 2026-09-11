@@ -32,7 +32,7 @@ import megamek.common.equipment.enums.StructureEngine;
 import megamek.common.exceptions.LocationFullException;
 import megamek.common.units.Entity;
 import megamek.common.units.BuildingConstruction;
-import megamek.common.units.BuildingEntity;
+import megamek.common.units.AbstractBuildingEntity;
 import megameklab.ui.util.AbstractEquipmentDatabaseView;
 import megameklab.util.BuildingUtil;
 import megameklab.util.UnitUtil;
@@ -271,7 +271,7 @@ class BuildingEquipmentTab extends JPanel {
 
         @Override
         protected boolean shouldShow(EquipmentType equipment) {
-            return getEntity() instanceof BuildingEntity building && !BuildingConstruction.hasNoInterior(building)
+            return getEntity() instanceof AbstractBuildingEntity building && !BuildingConstruction.hasNoInterior(building)
                   && BuildingConstruction.canMount(equipment) && super.shouldShow(equipment);
         }
 

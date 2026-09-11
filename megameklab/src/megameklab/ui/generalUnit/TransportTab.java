@@ -62,7 +62,7 @@ import megamek.common.bays.InfantryBay;
 import megamek.common.equipment.DockingCollar;
 import megamek.common.equipment.Transporter;
 import megamek.common.units.Entity;
-import megamek.common.units.BuildingEntity;
+import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.EntityWeightClass;
 import megamek.common.units.InfantryCompartment;
 import megamek.common.units.Jumpship;
@@ -449,7 +449,7 @@ public class TransportTab extends IView implements ActionListener, ChangeListene
                 Bay newBay = bayType.newBay(bay.getUnusedSlots(), bayNum);
                 newBay.setDoors(bay.getDoors());
                 newBay.setFacing(bay.getFacing());
-                if (getEntity() instanceof BuildingEntity building) {
+                if (getEntity() instanceof AbstractBuildingEntity building) {
                     building.getDesign().replaceBay(bay, newBay);
                 }
                 if (getEntity().isPodMountedTransport(bay)) {
@@ -529,7 +529,7 @@ public class TransportTab extends IView implements ActionListener, ChangeListene
                     }
                 }
                 bay = BayData.CARGO.newBay(size, bayNum);
-                if (previousBay != null && getEntity() instanceof BuildingEntity building) {
+                if (previousBay != null && getEntity() instanceof AbstractBuildingEntity building) {
                     building.getDesign().replaceBay(previousBay, bay);
                 }
                 addBay(bay, false);
@@ -856,7 +856,7 @@ public class TransportTab extends IView implements ActionListener, ChangeListene
                 Bay newBay = bayType.newBay(size, bay.getBayNumber());
                 newBay.setDoors(bay.getDoors());
                 newBay.setFacing(bay.getFacing());
-                if (getEntity() instanceof BuildingEntity building) {
+                if (getEntity() instanceof AbstractBuildingEntity building) {
                     building.getDesign().replaceBay(bay, newBay);
                 }
                 removeBay(bay);

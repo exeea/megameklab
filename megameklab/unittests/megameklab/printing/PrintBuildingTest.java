@@ -57,6 +57,7 @@ import megamek.common.units.BuildingEntity;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
 import megamek.common.units.IBuilding;
+import megamek.common.util.BuildingBlock;
 import megameklab.testing.util.InitializeTypes;
 import megameklab.util.BuildingUtil;
 import megameklab.util.UnitPrintManager;
@@ -180,7 +181,7 @@ class PrintBuildingTest {
         assertEquals(java.util.stream.IntStream.range(0, 15).mapToObj(index -> Integer.toString(14 - index)).toList(), levels);
     }
 
-    private PrintBuilding sheet(BuildingEntity building, PaperSize size) {
+    private PrintBuilding sheet(megamek.common.units.AbstractBuildingEntity building, PaperSize size) {
         var options = new RecordSheetOptions();
         options.setPaperSize(size);
         options.setReferenceCharts(false);
@@ -191,6 +192,21 @@ class PrintBuildingTest {
                 return "../../mm-data/data/images/recordsheets/" + size.dirName;
             }
         };
+    }
+
+    @Test
+    void mobileSheetPreservesSpeedAndIndividualHexHeights() throws Exception {
+        var mobile = BuildingUtil.newMobileStructure();
+        var hexes = List.copyOf(mobile.getInternalBuilding().getOriginalCoordsList());
+        BuildingUtil.configure(mobile, BuildingType.MEDIUM, IBuilding.FORTRESS, 3, 40, 0, hexes);
+        BuildingUtil.setHexHeight(mobile, hexes.get(1), 1);
+        mobile.setMaximumMP(1.25);
+        var sheet = sheet(mobile, PaperSize.ISO_A4);
+        assertTrue(sheet.createDocument(0, pageFormat(PaperSize.ISO_A4), true));
+        assertEquals(3, elements(sheet, "g", "building-map-layer").size());
+        assertEquals(4, elements(sheet, "polygon", "occupied").size());
+        assertTrue(sheet.getSVGDocument().getDocumentElement().getTextContent().contains("1.25"));
+        render(sheet, "mobile-variable-height");
     }
 
     @Test
@@ -463,6 +479,26 @@ class PrintBuildingTest {
             Configurator.setLevel("org.apache.fop", fontLogLevel);
         }
         assertTrue(Files.size(output) > 1000);
+    }
+
+    @Test
+    void defaultBuildingAmmoPrintsStartingLoadAndCurrentRoundsSeparately() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        building.addEquipment(EquipmentType.get("IS Ammo AC/5"), 0);
+        String[] nativeLines = java.util.Arrays.stream(BLKFile.getBlock(building).getAllDataAsString())
+              .map(line -> line.replace(":Shots20#", "")).toArray(String[]::new);
+        var loaded = (BuildingEntity) new BLKStructureFile(new BuildingBlock(nativeLines)).getEntity();
+        loaded.getAmmo().getFirst().setShotsLeft(7);
+
+        var clean = sheet(loaded, PaperSize.US_LETTER);
+        clean.options.setDamage(false);
+        assertTrue(clean.createDocument(0, pageFormat(PaperSize.US_LETTER), true));
+        assertTrue(elements(clean, "g", "building-inventory-entry").getFirst().getTextContent().contains("(20)"));
+
+        var current = sheet(loaded, PaperSize.US_LETTER);
+        current.options.setDamage(true);
+        assertTrue(current.createDocument(0, pageFormat(PaperSize.US_LETTER), true));
+        assertTrue(elements(current, "g", "building-inventory-entry").getFirst().getTextContent().contains("(7)"));
     }
 
     @Test

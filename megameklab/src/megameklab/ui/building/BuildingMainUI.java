@@ -46,7 +46,7 @@ import javax.swing.JPanel;
 import megamek.common.board.CubeCoords;
 import megamek.common.equipment.Mounted;
 import megamek.common.interfaces.ITechManager;
-import megamek.common.units.BuildingEntity;
+import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.Entity;
 import megameklab.ui.MegaMekLabMainUI;
@@ -78,13 +78,17 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         createNewUnit(Entity.ETYPE_BUILDING_ENTITY);
     }
 
+    public BuildingMainUI(boolean mobile) {
+        createNewUnit(mobile ? Entity.ETYPE_MOBILE_STRUCTURE : Entity.ETYPE_BUILDING_ENTITY);
+    }
+
     public BuildingMainUI(Entity entity, String filename) {
         setEntity(entity, filename);
     }
 
     @Override
-    public BuildingEntity getEntity() {
-        return (BuildingEntity) super.getEntity();
+    public AbstractBuildingEntity getEntity() {
+        return (AbstractBuildingEntity) super.getEntity();
     }
 
     @Override
@@ -109,6 +113,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         configPane.addTab("Structure", structure);
         configPane.addTab("Equipment", equipment);
         configPane.addTab("Transport & Quarters", new TabScrollPane(transport));
+        configPane.addTab("Capacity, crew, power & validation", systems.getTotalsPanel());
         configPane.addTab("Construction & Services", systems);
         configPane.addTab("Fluff", new TabScrollPane(fluff));
         configPane.addTab("Record Sheet", preview);
@@ -178,7 +183,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         });
         floorSelector.addActionListener(e -> {
             if (!selecting && floorSelector.getSelectedItem() != null) {
-                selectLocation(selectedHex, getEntity().getInternalBuilding().getBuildingHeight()
+                selectLocation(selectedHex, getEntity().getInternalBuilding().getHeight(selectedHex)
                       - 1 - floorSelector.getSelectedIndex());
             }
         });
@@ -198,7 +203,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         if (!hexes.contains(selectedHex)) {
             selectedHex = hexes.getFirst();
         }
-        int height = getEntity().getInternalBuilding().getBuildingHeight();
+        int height = getEntity().getInternalBuilding().getHeight(selectedHex);
         selectedFloor = Math.clamp(selectedFloor, 0, height - 1);
         hexSelector.removeAllItems();
         hexes.forEach(hex -> hexSelector.addItem(hexLabel(hex)));
@@ -311,7 +316,8 @@ public class BuildingMainUI extends MegaMekLabMainUI {
 
     @Override
     public void createNewUnit(long entityType, boolean primitive, boolean industrial, Entity oldUnit) {
-        BuildingEntity building = BuildingUtil.newBuilding();
+        AbstractBuildingEntity building = entityType == Entity.ETYPE_MOBILE_STRUCTURE
+              ? BuildingUtil.newMobileStructure() : BuildingUtil.newBuilding();
         if (oldUnit != null) {
             copyUnitBasics(building, oldUnit);
         }

@@ -77,6 +77,56 @@ import org.junit.jupiter.params.provider.ValueSource;
 @ExtendWith(InitializeTypes.class)
 class BuildingMainUITest {
     @Test
+    void mobileFuelCanBeConcentratedInSelectedHexesAndReturnedToUniformStorage() throws Exception {
+        var building = BuildingUtil.newMobileStructure();
+        building.setPowerSystem(megamek.common.equipment.enums.StructureEngine.COMBUSTION_LIQUID);
+        building.setOperatingRange(100);
+        var reference = new AtomicReference<BuildingMainUI>();
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = new BuildingMainUI(building, "mobile-fuel.blk");
+            reference.set(editor);
+            editor.onActivated();
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = reference.get();
+            var uniform = (JCheckBox) find(editor, "Distribute mobile fuel evenly");
+            var fuel = (JSpinner) find(editor, "Selected hex fuel tons");
+            assertTrue(uniform.isSelected());
+            assertFalse(fuel.isEnabled());
+            uniform.doClick();
+            fuel.setValue(0.0);
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = reference.get();
+            var unit = (megamek.common.units.MobileStructure) editor.getEntity();
+            assertFalse(unit.getFuelLocations().isEmpty());
+            assertEquals(0, unit.fuelWeightInHex(editor.selectedHex()));
+            editor.selectLocation(unit.getInternalBuilding().getOriginalCoordsList().get(1), 0);
+            editor.refreshAll();
+            ((JSpinner) find(editor, "Selected hex fuel tons")).setValue(unit.getFuelWeight());
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = reference.get();
+            var unit = (megamek.common.units.MobileStructure) editor.getEntity();
+            assertEquals(unit.getFuelWeight(), unit.fuelWeightInHex(editor.selectedHex()));
+            assertTrue(editor.hasUndo());
+            ((JCheckBox) find(editor, "Distribute mobile fuel evenly")).doClick();
+        });
+        SwingUtilities.invokeAndWait(() -> { });
+        SwingUtilities.invokeAndWait(() -> {
+            var editor = reference.get();
+            var unit = (megamek.common.units.MobileStructure) editor.getEntity();
+            assertTrue(unit.getFuelLocations().isEmpty());
+            assertEquals(unit.getFuelWeight() / unit.getInternalBuilding().getOriginalCoordsList().size(),
+                  unit.fuelWeightInHex(editor.selectedHex()));
+            render(editor, "mobile-fuel-storage", 1300, 950);
+        });
+    }
+
+    @Test
     void crewControlsUseTheGameCalculationAndPreserveAnExplicitCount() throws Exception {
         var building = BuildingUtil.newBuilding();
         building.addEquipment(EquipmentType.get("ISMediumLaser"), 0);
@@ -190,7 +240,7 @@ class BuildingMainUITest {
             assertEquals("-10,-10", selector.getItemAt(1));
             selector.setSelectedIndex(1);
             assertEquals(negative, editor.selectedHex());
-            assertEquals("0101/Ground", BuildingUtil.locationLabel(building, mount.getLocation()));
+            assertEquals("0101/G", BuildingUtil.locationLabel(building, mount.getLocation()));
             render(editor, "building-absolute-coordinates");
             editor.reloadTabs();
             assertTrue(((JCheckBox) find(editor, "Absolute coordinates")).isSelected());
@@ -543,18 +593,19 @@ class BuildingMainUITest {
                   (JTable) find(editor, "Building equipment"));
             tabs.setSelectedIndex(3);
             render(editor, "building-construction-services");
-            var services = (Container) find(editor, "Building service sections");
-            assertEquals(3, services.getComponentCount());
+            var services = (JTabbedPane) find(editor, "Building service sections");
+            assertEquals(3, services.getTabCount());
+            assertEquals("Capacity, crew, power & validation", services.getTitleAt(0));
+            assertEquals("Large Doors", services.getTitleAt(1));
+            assertEquals("Industrial Elevators", services.getTitleAt(2));
             for (int index = 0; index < 3; index++) {
-                var panel = services.getComponent(index);
-                assertTrue(panel.isVisible());
-                assertEquals(services.getComponent(0).getY(), panel.getY());
-                if (index > 0) {
-                    var previous = services.getComponent(index - 1);
-                    assertTrue(panel.getX() >= previous.getX() + previous.getWidth());
+                services.setSelectedIndex(index);
+                for (int panelIndex = 0; panelIndex < 3; panelIndex++) {
+                    assertEquals(index == panelIndex, services.getComponentAt(panelIndex).isVisible());
                 }
             }
-            assertEquals(tabs, SwingUtilities.getAncestorOfClass(JTabbedPane.class, find(editor, "Building doors")));
+            assertEquals(services, SwingUtilities.getAncestorOfClass(JTabbedPane.class, find(editor, "Building doors")));
+            services.setSelectedIndex(0);
             editor.undo();
             assertEquals(BuildingDesign.Ceiling.STANDARD, editor.getEntity().getDesign().getCeiling());
             editor.redo();

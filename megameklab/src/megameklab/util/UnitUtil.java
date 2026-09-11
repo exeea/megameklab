@@ -790,6 +790,10 @@ public class UnitUtil {
             points = (int) Math.floor(unit.getWeight());
         } else if (unit.hasETypeFlag(Entity.ETYPE_AERO)) {
             points = (int) Math.floor(unit.getWeight() * 8);
+        } else if (unit instanceof AbstractBuildingEntity building) {
+            for (int location = 0; location < building.locations(); location++) {
+                points += TestBuilding.maxArmorPoints(building, location);
+            }
         }
         return points;
     }
@@ -1539,7 +1543,7 @@ public class UnitUtil {
             testEntity = new TestInfantry((ConvInfantry) unit, entityVerifier.infOption, null);
         } else if (unit.hasETypeFlag(Entity.ETYPE_HANDHELD_WEAPON)) {
             testEntity = new TestHandheldWeapon((HandheldWeapon) unit, entityVerifier.infOption, null);
-        } else if (unit instanceof BuildingEntity building) {
+        } else if (unit instanceof AbstractBuildingEntity building) {
             testEntity = new TestBuilding(building, entityVerifier.tankOption, null);
         }
         return testEntity;
@@ -1970,6 +1974,8 @@ public class UnitUtil {
             return Entity.ETYPE_TANK;
         } else if (newUnit instanceof HandheldWeapon) {
             return Entity.ETYPE_HANDHELD_WEAPON;
+        } else if (newUnit instanceof MobileStructure) {
+            return Entity.ETYPE_MOBILE_STRUCTURE;
         } else if (newUnit instanceof megamek.common.units.BuildingEntity) {
             return Entity.ETYPE_BUILDING_ENTITY;
         } else if (newUnit instanceof GunEmplacement) {

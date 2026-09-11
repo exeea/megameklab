@@ -54,6 +54,26 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 @ExtendWith(InitializeTypes.class)
 class BuildingUtilTest {
+    @Test
+    void shorterMobileHexRemovesEquipmentAndDoorsOnDeletedFloors() throws Exception {
+        var mobile = BuildingUtil.newMobileStructure();
+        var hexes = List.copyOf(mobile.getInternalBuilding().getOriginalCoordsList());
+        BuildingUtil.configure(mobile, BuildingType.MEDIUM, IBuilding.FORTRESS, 3, 40, 0, hexes);
+        var retained = mobile.addEquipment(EquipmentType.get("ISMediumLaser"), 0);
+        var removed = mobile.addEquipment(EquipmentType.get("ISMediumLaser"), 2);
+        mobile.getDesign().getDoors().add(new BuildingDesign.Door(new BuildingDesign.Position(CubeCoords.ZERO, 2), 0, 1));
+        BuildingUtil.setHexHeight(mobile, CubeCoords.ZERO, 1);
+        assertTrue(mobile.getEquipment().contains(retained));
+        assertFalse(mobile.getEquipment().contains(removed));
+        assertTrue(mobile.getDesign().getDoors().isEmpty());
+        assertEquals(1, mobile.getInternalBuilding().getHeight(CubeCoords.ZERO));
+        assertEquals(3, mobile.getInternalBuilding().getHeight(hexes.get(1)));
+        var loaded = new BLKStructureFile(BLKFile.getBlock(mobile)).getEntity();
+        assertInstanceOf(megamek.common.units.MobileStructure.class, loaded);
+        assertEquals(1, ((megamek.common.units.MobileStructure) loaded).getInternalBuilding().getHeight(CubeCoords.ZERO));
+        assertEquals(1, loaded.getEquipment().size());
+    }
+
     private static final CubeCoords EAST = new CubeCoords(1, 0, -1);
 
     @Test
@@ -68,7 +88,7 @@ class BuildingUtilTest {
         assertTrue(List.of(block.getDataAsString("building_options")).contains("base_level=-2"));
         var loaded = (BuildingEntity) new BLKStructureFile(block).getEntity();
         assertEquals(-2, loaded.getDesign().getBaseLevel());
-        assertEquals(List.of("0504/-2", "0504/-1", "0504/Ground", "0504/1"), java.util.stream.IntStream.range(0, 4)
+        assertEquals(List.of("0504/-2", "0504/-1", "0504/G", "0504/1"), java.util.stream.IntStream.range(0, 4)
               .mapToObj(loc -> BuildingUtil.locationLabel(loaded, loc)).toList());
         assertEquals(1, loaded.getEquipment().getFirst().getLocation());
         assertEquals(entity.getDesign().getDoors(), loaded.getDesign().getDoors());
@@ -94,7 +114,7 @@ class BuildingUtilTest {
         entity.getDesign().setBaseLevel(0);
         var loaded = (BuildingEntity) new BLKStructureFile(BLKFile.getBlock(entity)).getEntity();
         assertEquals(0, loaded.getDesign().getBaseLevel());
-        assertEquals("0504/Ground", BuildingUtil.locationLabel(loaded, 0));
+        assertEquals("0504/G", BuildingUtil.locationLabel(loaded, 0));
         loaded.getDesign().setBaseLevel(null);
         assertEquals(-5, BuildingConstruction.baseLevel(loaded));
         loaded.getDesign().setSite(BuildingDesign.Site.SURFACE);
@@ -111,7 +131,7 @@ class BuildingUtilTest {
                 assertEquals(a.toOffset().distance(b.toOffset()), grid.position(a).distance(grid.position(b)));
             }
         }
-        assertEquals("0504/Ground", BuildingUtil.locationLabel(BuildingUtil.newBuilding(), 0));
+        assertEquals("0504/G", BuildingUtil.locationLabel(BuildingUtil.newBuilding(), 0));
     }
 
     @Test

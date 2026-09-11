@@ -46,7 +46,7 @@ import megamek.common.equipment.Engine;
 import megamek.common.equipment.EquipmentType;
 import megamek.common.equipment.Mounted;
 import megamek.common.equipment.PowerGeneratorType;
-import megamek.common.units.BuildingEntity;
+import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.ConstructionUtil;
 import megamek.common.units.Entity;
@@ -58,8 +58,8 @@ public final class BuildingUtil {
     private BuildingUtil() {
     }
 
-    public static BuildingEntity newBuilding() {
-        BuildingEntity entity = new BuildingEntity(BuildingType.MEDIUM, IBuilding.STANDARD);
+    public static megamek.common.units.BuildingEntity newBuilding() {
+        megamek.common.units.BuildingEntity entity = new megamek.common.units.BuildingEntity(BuildingType.MEDIUM, IBuilding.STANDARD);
         entity.setEngine(new Engine(0, Engine.NONE, 0));
         entity.setChassis("New");
         entity.setModel("Building");
@@ -71,9 +71,22 @@ public final class BuildingUtil {
         return entity;
     }
 
-    public static String roofLevelLabel(BuildingEntity entity, int level) {
+    public static String roofLevelLabel(AbstractBuildingEntity entity, int level) {
         return level == entity.getInternalBuilding().getBuildingHeight()
               ? "Roof (" + entity.getLevelLabel(level) + ")" : entity.getLevelLabel(level);
+    }
+
+    public static megamek.common.units.MobileStructure newMobileStructure() {
+        var entity = new megamek.common.units.MobileStructure(BuildingType.MEDIUM, IBuilding.STANDARD);
+        entity.setChassis("New");
+        entity.setModel("Mobile Structure");
+        entity.setYear(3145);
+        entity.setTechLevel(TechConstants.T_IS_ADVANCED);
+        entity.configureConstruction(BuildingType.MEDIUM, IBuilding.STANDARD, 1, 40, 0,
+              List.of(CubeCoords.ZERO, new CubeCoords(1, 0, -1)));
+        entity.setArmorType(EquipmentType.T_ARMOR_STANDARD);
+        entity.setArmorTechLevel(entity.getTechLevel());
+        return entity;
     }
 
     public static String absoluteHexLabel(CubeCoords hex) {
@@ -84,7 +97,7 @@ public final class BuildingUtil {
         return facing < 0 || facing >= FACINGS.size() ? "?" : FACINGS.get(facing);
     }
 
-    public static int exteriorFacing(BuildingEntity entity, CubeCoords hex) {
+    public static int exteriorFacing(AbstractBuildingEntity entity, CubeCoords hex) {
         for (int side = 0; side < 6; side++) {
             if (!entity.getInternalBuilding().getOriginalCoordsList().contains(hex.toOffset().translated(side).toCube())) {
                 return side;
@@ -125,7 +138,7 @@ public final class BuildingUtil {
               }).min(Comparator.comparingInt(SheetGrid::rows)).orElseThrow();
     }
 
-    public static String locationLabel(BuildingEntity entity, int location) {
+    public static String locationLabel(AbstractBuildingEntity entity, int location) {
         if (location < 0 || location >= entity.locations()) {
             return "Unallocated";
         }
@@ -136,7 +149,7 @@ public final class BuildingUtil {
         return sheetGrid(hexes).label(hex) + "/" + entity.getLevelLabel(level, true);
     }
 
-    public static void assignEquipment(BuildingEntity entity, Mounted<?> mount, int location) {
+    public static void assignEquipment(AbstractBuildingEntity entity, Mounted<?> mount, int location) {
         if (location != mount.getLocation()) {
             entity.getDesign().getEquipmentSpace().remove(mount);
         }
@@ -147,7 +160,7 @@ public final class BuildingUtil {
         }
     }
 
-    public static void configure(BuildingEntity entity, BuildingType type, int buildingClass, int levels, int cf,
+    public static void configure(AbstractBuildingEntity entity, BuildingType type, int buildingClass, int levels, int cf,
           int armor, List<CubeCoords> hexes) {
         entity.configureConstruction(type, buildingClass, levels, cf, armor, hexes);
         entity.getEquipment().stream().filter(m -> m.getLocation() == Entity.LOC_NONE && !m.isOneShotAmmo()).toList()
@@ -155,12 +168,36 @@ public final class BuildingUtil {
         entity.getDesign().removeDeletedComponents(entity);
     }
 
+    public static void setHexHeight(AbstractBuildingEntity entity, CubeCoords hex, int height) {
+        if (!(entity instanceof megamek.common.units.MobileStructure) || height < 1
+              || height > entity.getInternalBuilding().getBuildingHeight()) {
+            throw new IllegalArgumentException("Only a Mobile Structure can have individual hex heights");
+        }
+        entity.getInternalBuilding().setHeight(height, hex);
+        int roof = entity.getInternalBuilding().getBuildingHeight();
+        java.util.function.Predicate<megamek.common.units.BuildingDesign.Position> removed = position ->
+              position.hex().equals(hex) && position.level() >= height && position.level() < roof;
+        var hexEquipment = java.util.Set.copyOf(entity.getEquipmentInHex(hex));
+        entity.getEquipment().stream().filter(mount -> {
+            return hexEquipment.contains(mount) && entity.getLocationLevel(mount.getLocation()) >= height
+                  && entity.getLocationLevel(mount.getLocation()) < roof
+                  || entity.getDesign().getEquipmentSpace().getOrDefault(mount, List.of()).stream().anyMatch(removed);
+        }).toList().forEach(mount -> ConstructionUtil.removeMounted(entity, mount));
+        entity.getDesign().getBaySpace().entrySet().stream()
+              .filter(entry -> entry.getValue().stream().anyMatch(space -> removed.test(space.position())))
+              .map(java.util.Map.Entry::getKey).toList().forEach(entity::removeTransporter);
+        entity.getDesign().getDoors().removeIf(door -> door.position().hex().equals(hex)
+              && door.position().level() + door.height() > height);
+        entity.getDesign().remap(position -> removed.test(position) ? null : position, facing -> facing);
+        entity.getDesign().removeDeletedComponents(entity);
+    }
+
     /** Rotate the footprint and weapon facings together, keeping the equipment on the same physical floor. */
-    public static void rotate(BuildingEntity entity) {
+    public static void rotate(AbstractBuildingEntity entity) {
         transform(entity, c -> new CubeCoords(-(int) c.r(), -(int) c.s(), -(int) c.q()), facing -> (facing + 1) % 6);
     }
 
-    public static void transform(BuildingEntity entity, java.util.function.UnaryOperator<CubeCoords> transform,
+    public static void transform(AbstractBuildingEntity entity, java.util.function.UnaryOperator<CubeCoords> transform,
           java.util.function.IntUnaryOperator facingTransform) {
         var building = entity.getInternalBuilding();
         entity.configureConstruction(entity.getBuildingType(), entity.getBldgClass(), building.getBuildingHeight(),
@@ -168,11 +205,14 @@ public final class BuildingUtil {
               transform, facingTransform);
     }
 
-    public static double equipmentWeight(BuildingEntity entity) {
+    public static double equipmentWeight(AbstractBuildingEntity entity) {
         return UnitUtil.getEntityVerifier(entity).calculateWeight();
     }
 
-    public static String powerDescription(BuildingEntity entity) {
+    public static String powerDescription(AbstractBuildingEntity entity) {
+        if (entity instanceof megamek.common.units.MobileStructure mobile) {
+            return mobile.getPowerSystem().toString();
+        }
         if (BuildingConstruction.hasNoInterior(entity) || BuildingConstruction.usesHexsides(entity)) {
             return "NA";
         }
@@ -185,7 +225,7 @@ public final class BuildingUtil {
         return entity.hasPower() ? "Available" : "Insufficient";
     }
 
-    public static List<String> constructionIssues(BuildingEntity entity) {
+    public static List<String> constructionIssues(AbstractBuildingEntity entity) {
         StringBuffer issues = new StringBuffer();
         UnitUtil.getEntityVerifier(entity).correctEntity(issues, entity.getTechLevel());
         return issues.toString().lines().filter(line -> !line.isBlank()).toList();

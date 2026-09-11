@@ -55,7 +55,8 @@ import megameklab.util.BuildingMap;
 import megameklab.util.BuildingMap.Feature;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
-import megamek.common.units.BuildingEntity;
+import megamek.common.units.AbstractBuildingEntity;
+import megamek.common.units.MobileStructure;
 import megamek.common.units.IBuilding;
 import megameklab.util.BuildingUtil;
 import org.w3c.dom.Element;
@@ -66,16 +67,16 @@ public class PrintBuilding extends PrintEntity {
     private static final int LEVELS_PER_PAGE = 6;
     private static final FontRenderContext TEXT_CONTEXT = new FontRenderContext(null, true, true);
     private List<InventoryPage> plannedInventory;
-    private final BuildingEntity building;
+    private final AbstractBuildingEntity building;
     private int currentPage;
 
-    public PrintBuilding(BuildingEntity building, int firstPage, RecordSheetOptions options) {
+    public PrintBuilding(AbstractBuildingEntity building, int firstPage, RecordSheetOptions options) {
         super(firstPage, options);
         this.building = building;
     }
 
     @Override
-    public BuildingEntity getEntity() {
+    public AbstractBuildingEntity getEntity() {
         return building;
     }
 
@@ -104,6 +105,9 @@ public class PrintBuilding extends PrintEntity {
 
     @Override
     protected String getRecordSheetTitle() {
+        if (building instanceof MobileStructure) {
+            return "Mobile Structure Record Sheet";
+        }
         return "Structure Record Sheet";
     }
 
@@ -123,7 +127,9 @@ public class PrintBuilding extends PrintEntity {
         setTextField(TYPE, building.getShortNameRaw(), true);
         setTextField("levels", building.getBldgClass() == IBuilding.BRIDGE ? "Decks: " + BuildingConstruction.mapLevels(building).stream()
               .map(building::getLevelLabel).collect(Collectors.joining(",")) : Integer.toString(building.getInternalBuilding().getBuildingHeight()));
-        setTextField(MP_WALK, "0");
+        setTextField(MP_WALK, building instanceof MobileStructure mobile
+              ? NumberFormat.getNumberInstance().format(mobile.getMaximumMP()) : "0");
+        setTextField("movementType", building instanceof MobileStructure mobile ? mobile.getMovementModeAsString() : "Static");
         if (!building.isClan() && !building.isMixedTech()) {
             hideElement("techClanCheck");
         }
@@ -134,6 +140,9 @@ public class PrintBuilding extends PrintEntity {
         setTextField(BV, NumberFormat.getInstance().format(building.calculateBattleValue(true, !showPilotInfo())));
         String generators = building.getEquipment().stream().filter(m -> m.getType() instanceof PowerGeneratorType)
               .map(Mounted::getName).distinct().collect(Collectors.joining(", "));
+        if (building instanceof MobileStructure mobile) {
+            generators = mobile.getPowerSystem().getEngineName();
+        }
         setTextField("powerplant", BuildingConstruction.hasNoInterior(building) || BuildingConstruction.usesHexsides(building)
               ? "NA" : generators.isBlank() ? "External supply" : generators, true);
         setTextField("buildingCrew", Integer.toString(building.getNCrew()));
@@ -275,7 +284,7 @@ public class PrintBuilding extends PrintEntity {
                         polygon.setAttribute("data-building-hex", grid.label(hex));
                         polygon.setAttribute("data-building-features", cellFeatures.stream().map(symbol -> symbol.name().toLowerCase()).collect(Collectors.joining(" ")));
                         var glyphs = cellFeatures.stream().filter(symbol -> symbol != Feature.DOOR).toList();
-                        for (var door : building.getDesign().getDoors()) {
+                        for (var door : building.getDesign().getMapDoors()) {
                             if (door.facing() < 0 || door.facing() > 5 || !door.position().hex().equals(hex) || level < door.position().level()
                                   || level >= door.position().level() + door.height()) {
                                 continue;
@@ -470,7 +479,7 @@ public class PrintBuilding extends PrintEntity {
         if (design.getSite() != BuildingDesign.Site.SURFACE) {
             entries.add(note("site", design.getSite() + "; cover " + design.getDepth() + " levels", "All"));
         }
-        for (var door : design.getDoors()) {
+        for (var door : design.getMapDoors()) {
             String side = BuildingUtil.facingLabel(door.facing());
             entries.add(note("door", "Door " + side + "; " + door.height() + " levels high",
                   BuildingUtil.locationLabel(building, BuildingConstruction.location(building, door.position()))));

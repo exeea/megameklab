@@ -39,7 +39,7 @@ import megamek.common.board.CubeCoords;
 import megamek.common.equipment.BuildingEquipmentType;
 import megamek.common.equipment.Mounted;
 import megamek.common.units.BuildingConstruction;
-import megamek.common.units.BuildingEntity;
+import megamek.common.units.AbstractBuildingEntity;
 
 /** Feature identity shared by the editing map and printed structure maps. */
 public final class BuildingMap {
@@ -60,7 +60,7 @@ public final class BuildingMap {
         }
     }
 
-    public static List<Feature> features(BuildingEntity building, CubeCoords hex, int level) {
+    public static List<Feature> features(AbstractBuildingEntity building, CubeCoords hex, int level) {
         List<Feature> result = new ArrayList<>();
         if (building.getTransportBays().stream().flatMap(bay -> BuildingConstruction.baySpaces(building, bay).stream())
               .anyMatch(space -> space.tons() > 0 && space.position().hex().equals(hex) && space.position().level() == level)) {
@@ -69,7 +69,7 @@ public final class BuildingMap {
         if (building.getDesign().getElevators().stream().anyMatch(lift -> lift.hex().equals(hex) && lift.reaches(level))) {
             result.add(Feature.ELEVATOR);
         }
-        if (level == building.getInternalBuilding().getBuildingHeight() - 1) {
+        if (level == building.getInternalBuilding().getHeight(hex) - 1) {
             if (building.getEquipmentInHex(hex).stream().anyMatch(mount -> mount.getType() instanceof BuildingEquipmentType facility && facility.getFacility().isRoof())) {
                 result.add(Feature.DECK);
             }
@@ -77,7 +77,7 @@ public final class BuildingMap {
                 result.add(Feature.TURRET);
             }
         }
-        if (building.getDesign().getDoors().stream().anyMatch(door -> door.position().hex().equals(hex)
+        if (building.getDesign().getMapDoors().stream().anyMatch(door -> door.position().hex().equals(hex)
               && level >= door.position().level() && level < door.position().level() + door.height())) {
             result.add(Feature.DOOR);
         }

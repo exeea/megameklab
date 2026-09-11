@@ -62,7 +62,7 @@ import megamek.common.loaders.MekFileParser;
 import megamek.common.options.GameOptions;
 import megamek.common.units.Aero;
 import megamek.common.units.BTObject;
-import megamek.common.units.BuildingEntity;
+import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.Dropship;
 import megamek.common.units.Entity;
 import megamek.common.units.Infantry;
@@ -246,7 +246,7 @@ public class UnitPrintManager {
                         sheets.add(prs);
                         protoList = new ArrayList<>();
                     }
-                } else if (unit instanceof BuildingEntity building) {
+                } else if (unit instanceof AbstractBuildingEntity building) {
                     var sheet = new PrintBuilding(building, pageCount, options);
                     sheets.add(sheet);
                     pageCount += sheet.getPageCount();

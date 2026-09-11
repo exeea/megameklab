@@ -68,12 +68,15 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.Icon;
+import javax.swing.JList;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSpinner;
 import javax.swing.JTextArea;
 import javax.swing.JToggleButton;
+import javax.swing.JScrollPane;
 import javax.swing.Scrollable;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
@@ -85,7 +88,10 @@ import megamek.common.enums.BuildingType;
 import megamek.common.enums.Faction;
 import megamek.common.equipment.EquipmentType;
 import megamek.common.interfaces.ITechManager;
-import megamek.common.units.BuildingEntity;
+import megamek.common.units.AbstractBuildingEntity;
+import megamek.common.units.MobileStructure;
+import megamek.common.units.EntityMovementMode;
+import megamek.common.equipment.enums.StructureEngine;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.IBuilding;
 import megamek.common.units.UnitRole;
@@ -108,6 +114,15 @@ class BuildingStructureTab extends JPanel implements BuildListener {
     private final JComboBox<String> buildingClass = new JComboBox<>(new String[] {
           "Standard", "Hangar", "Fortress", "Gun Emplacement", "Castles Brian", "Tent", "Wall", "Fence", "Bridge" });
     private final JSpinner levels = new JSpinner(new SpinnerNumberModel(1, 1, 100, 1));
+    private final JComboBox<EntityMovementMode> motive = new JComboBox<>(new EntityMovementMode[] {
+          EntityMovementMode.TRACKED, EntityMovementMode.VTOL, EntityMovementMode.NAVAL, EntityMovementMode.SUBMARINE });
+    private final JComboBox<StructureEngine> mobilePower = new JComboBox<>(StructureEngine.values());
+    private final JSpinner maximumMP = new JSpinner(new SpinnerNumberModel(1.0, .25, 4.0, .25));
+    private final JSpinner operatingRange = new JSpinner(new SpinnerNumberModel(0.0, 0.0, null, 100.0));
+    private final JCheckBox uniformFuel = new JCheckBox("Distribute fuel evenly");
+    private final JSpinner hexFuel = new JSpinner(new SpinnerNumberModel(0.0, 0.0, null, .5));
+    private final JLabel fuelAllocation = new JLabel();
+    private final JSpinner hexHeight = new JSpinner(new SpinnerNumberModel(1, 1, 100, 1));
     private final JSpinner baseLevel = new JSpinner(new SpinnerNumberModel(0, null, null, 1));
     private final JCheckBox automaticBaseLevel = new JCheckBox("Automatic from site");
     private final JLabel baseLevelLabel;
@@ -140,6 +155,17 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         basicInfo = new BasicInfoView(entity().getConstructionTechAdvancement());
         setLayout(new BorderLayout(15, 10));
         JPanel identity = new JPanel(new GridBagLayout());
+        mobilePower.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                  boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof StructureEngine engine) {
+                    setText(engine.getEngineName());
+                }
+                return this;
+            }
+        });
         basicInfo.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createTitledBorder("Basic Information"),
               BorderFactory.createEmptyBorder(4, 4, 4, 4)));
         icon.setFromEntity(entity());
@@ -156,7 +182,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         levels.setToolTipText("Number of floors. Set their numbering with Lowest floor level.");
         JPanel floorNumbering = new JPanel(new GridLayout(0, 1, 0, 4));
         baseLevel.setName("Lowest floor level");
-        baseLevel.setToolTipText("0 = Ground; -2 numbers the floors -2, -1, Ground, 1… This sets labels, not construction height.");
+        baseLevel.setToolTipText("Actual lowest-floor elevation relative to the map surface. 0 = Ground. For a connected basement, choose Underground, turn off Automatic, and set this to minus the number of levels. Deploy the surface building first, then place this part on the same hexes.");
         automaticBaseLevel.setName("Automatic floor numbering");
         automaticBaseLevel.setToolTipText("Surface floors start at Ground. Underground/underwater floors use roof cover depth.");
         floorNumbering.add(baseLevel);
@@ -164,6 +190,34 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         baseLevelLabel = addField(fields, "Lowest floor level (0 = Ground)", floorNumbering);
         cfLabel = addField(fields, "CF per hex", cf);
         armorLabel = addField(fields, "Armor points per hex", armor);
+        if (entity() instanceof MobileStructure) {
+            buildingClass.setModel(new DefaultComboBoxModel<>(new String[] { "Standard", "Hangar", "Fortress" }));
+            addField(fields, "Motive system", motive);
+            addField(fields, "Power system", mobilePower);
+            addField(fields, "Maximum MP", maximumMP);
+            addField(fields, "Operating range (km)", operatingRange);
+            JPanel fuel = new JPanel(new GridLayout(0, 1, 0, 4));
+            uniformFuel.setName("Distribute mobile fuel evenly");
+            hexFuel.setName("Selected hex fuel tons");
+            hexFuel.setToolTipText("Fuel stored in the selected hex. Total allocated fuel must match the operating range.");
+            fuel.add(uniformFuel);
+            fuel.add(hexFuel);
+            fuel.add(fuelAllocation);
+            addField(fields, "Selected hex fuel (tons)", fuel);
+            addField(fields, "Selected hex levels", hexHeight);
+            motive.addActionListener(event -> applyPropulsion());
+            mobilePower.addActionListener(event -> applyPropulsion());
+            maximumMP.addChangeListener(event -> applyPropulsion());
+            operatingRange.addChangeListener(event -> applyPropulsion());
+            uniformFuel.addActionListener(event -> applyFuelDistribution());
+            hexFuel.addChangeListener(event -> applyFuelDistribution());
+            hexHeight.addChangeListener(event -> {
+                if (!refreshing) {
+                    BuildingUtil.setHexHeight(entity(), editor.selectedHex(), (Integer) hexHeight.getValue());
+                    editor.scheduleRefresh();
+                }
+            });
+        }
         var fieldWidth = new GridBagConstraints();
         fieldWidth.gridx = 1;
         fieldWidth.gridy = fields.getComponentCount() / 2;
@@ -187,6 +241,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         identity.add(Box.createVerticalGlue(), row);
         var properties = new TabScrollPane(identity);
         properties.setName("Building properties");
+        properties.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         add(properties, BorderLayout.WEST);
 
         JPanel geometry = new JPanel(new BorderLayout(5, 10));
@@ -345,7 +400,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         return name;
     }
 
-    private BuildingEntity entity() {
+    private AbstractBuildingEntity entity() {
         return editor.getEntity();
     }
 
@@ -360,22 +415,39 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         basicInfo.addListener(this);
         icon.refresh();
         type.setModel(new DefaultComboBoxModel<>(java.util.Arrays.stream(BuildingType.values())
-              .filter(value -> TestBuilding.limits(value, entity().getBldgClass()) != null || value == entity().getBuildingType())
+              .filter(value -> TestBuilding.limits(entity(), value, entity().getBldgClass()) != null || value == entity().getBuildingType())
               .toArray(BuildingType[]::new)));
         type.setSelectedItem(entity().getBuildingType());
         buildingClass.setSelectedIndex(entity().getBldgClass() >= 0 && entity().getBldgClass() < buildingClass.getItemCount()
               ? entity().getBldgClass() : -1);
         levels.setValue(entity().getInternalBuilding().getBuildingHeight());
+        if (entity() instanceof MobileStructure mobile) {
+            motive.setSelectedItem(mobile.getMovementMode());
+            mobilePower.setModel(new DefaultComboBoxModel<>(java.util.Arrays.stream(StructureEngine.values())
+                  .filter(power -> power.mobilePowerMultiplier(mobile.getMovementMode(), mobile.isClan()) > 0)
+                  .toArray(StructureEngine[]::new)));
+            mobilePower.setSelectedItem(mobile.getPowerSystem());
+            maximumMP.setValue(mobile.getMaximumMP());
+            operatingRange.setValue(mobile.getOperatingRange());
+            uniformFuel.setSelected(mobile.getFuelLocations().isEmpty());
+            hexFuel.setEnabled(!uniformFuel.isSelected());
+            hexFuel.setValue(mobile.fuelWeightInHex(editor.selectedHex()));
+            double allocatedFuel = mobile.getInternalBuilding().getOriginalCoordsList().stream()
+                  .mapToDouble(mobile::fuelWeightInHex).sum();
+            fuelAllocation.setText("Allocated: %.2f / %.2f tons".formatted(allocatedFuel, mobile.getFuelWeight()));
+            ((SpinnerNumberModel) hexHeight.getModel()).setMaximum(entity().getInternalBuilding().getBuildingHeight());
+            hexHeight.setValue(entity().getInternalBuilding().getHeight(editor.selectedHex()));
+        }
         baseLevel.setValue(BuildingConstruction.baseLevel(entity()));
         automaticBaseLevel.setSelected(entity().getDesign().getBaseLevel() == null);
         baseLevel.setEnabled(!automaticBaseLevel.isSelected());
         baseLevelLabel.setVisible(entity().getBldgClass() != IBuilding.BRIDGE);
         baseLevel.getParent().setVisible(entity().getBldgClass() != IBuilding.BRIDGE);
-        cf.setValue(entity().getInternalBuilding().getCurrentCF(CubeCoords.ZERO));
-        armor.setValue(entity().getInternalBuilding().getArmor(CubeCoords.ZERO));
+        cf.setValue(entity().getOInternal(0));
+        armor.setValue(entity().getOArmor(0));
         cfLabel.setText(BuildingConstruction.usesHexsides(entity()) ? "CF per hexside:" : "CF per hex:");
         armorLabel.setText(BuildingConstruction.usesHexsides(entity()) ? "Armor per hexside:" : "Armor per hex:");
-        var rule = TestBuilding.limits(entity().getBuildingType(), entity().getBldgClass());
+        var rule = TestBuilding.limits(entity());
         limits.setText("<html><b>Construction limits</b><br>" + (rule == null ? "Invalid type/class combination" : "CF %d–%d; %s; %d %s"
               .formatted(rule.minimumCF(), rule.maximumCF(), rule.hexes() == Integer.MAX_VALUE ? "no length limit"
                     : "up to " + rule.hexes() + " hexes", rule.levels(), entity().getBldgClass() == IBuilding.BRIDGE ? "deck" : "levels")) + "</html>");
@@ -387,7 +459,8 @@ class BuildingStructureTab extends JPanel implements BuildListener {
               + (entity().getBldgClass() == IBuilding.BRIDGE
               ? "Bridge decks follow a steady slope. Their ends must meet the underlying map terrain."
               : BuildingConstruction.usesHexsides(entity()) ? "Select occupied hexsides below. All segments share CF, armor and height."
-                    : "All hexes share the same height. Stepped buildings are separate buildings in a complex."));
+                    : entity() instanceof MobileStructure ? "Select a hex to set its individual height. Capacity uses the structure's maximum height."
+                          : "All hexes share the same height. Stepped buildings are separate buildings in a complex."));
         sideControls.setVisible(BuildingConstruction.usesHexsides(entity()));
         for (int side = 0; side < 6; side++) {
             sides[side].setSelected((entity().getDesign().wallSides(editor.selectedHex()) & (1 << side)) != 0);
@@ -433,12 +506,12 @@ class BuildingStructureTab extends JPanel implements BuildListener {
             if (buildingClass.getSelectedIndex() != entity().getBldgClass()) {
                 refreshing = true;
                 var chosen = (BuildingType) type.getSelectedItem();
-                if (TestBuilding.limits(chosen, buildingClass.getSelectedIndex()) == null) {
+                if (TestBuilding.limits(entity(), chosen, buildingClass.getSelectedIndex()) == null) {
                     chosen = java.util.Arrays.stream(BuildingType.values())
-                          .filter(value -> TestBuilding.limits(value, buildingClass.getSelectedIndex()) != null).findFirst().orElseThrow();
+                          .filter(value -> TestBuilding.limits(entity(), value, buildingClass.getSelectedIndex()) != null).findFirst().orElseThrow();
                     type.setSelectedItem(chosen);
                 }
-                var rule = TestBuilding.limits(chosen, buildingClass.getSelectedIndex());
+                var rule = TestBuilding.limits(entity(), chosen, buildingClass.getSelectedIndex());
                 cf.setValue(Math.clamp((int) cf.getValue(), rule.minimumCF(), rule.maximumCF()));
                 levels.setValue(Math.min((int) levels.getValue(), rule.levels()));
                 refreshing = false;
@@ -450,6 +523,29 @@ class BuildingStructureTab extends JPanel implements BuildListener {
     private void applyFloorNumbering() {
         if (!refreshing) {
             entity().getDesign().setBaseLevel(automaticBaseLevel.isSelected() ? null : (Integer) baseLevel.getValue());
+            editor.scheduleRefresh();
+        }
+    }
+
+    private void applyPropulsion() {
+        if (!refreshing && entity() instanceof MobileStructure mobile) {
+            mobile.setMovementMode((EntityMovementMode) motive.getSelectedItem());
+            mobile.setMaximumMP(((Number) maximumMP.getValue()).doubleValue());
+            mobile.setPowerSystem((StructureEngine) mobilePower.getSelectedItem());
+            mobile.setOperatingRange(((Number) operatingRange.getValue()).doubleValue());
+            editor.scheduleRefresh();
+        }
+    }
+
+    private void applyFuelDistribution() {
+        if (!refreshing && entity() instanceof MobileStructure mobile) {
+            Map<CubeCoords, Double> allocations = new LinkedHashMap<>();
+            if (!uniformFuel.isSelected()) {
+                mobile.getInternalBuilding().getOriginalCoordsList().forEach(hex ->
+                      allocations.put(hex, mobile.fuelWeightInHex(hex)));
+                allocations.put(editor.selectedHex(), ((Number) hexFuel.getValue()).doubleValue());
+            }
+            mobile.setFuelLocations(allocations);
             editor.scheduleRefresh();
         }
     }
@@ -764,7 +860,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                 }
             }
             // Decorations follow every fill so adjacent hexes cannot erase edge symbols.
-            for (var door : entity().getDesign().getDoors()) {
+            for (var door : entity().getDesign().getMapDoors()) {
                 int level = pancake ? floor : displayedLevel(door.position().hex());
                 var polygon = polygons.get(door.position().hex());
                 if (polygon == null || door.facing() < 0 || door.facing() > 5 || level < door.position().level()

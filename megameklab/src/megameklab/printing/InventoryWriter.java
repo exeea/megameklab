@@ -440,12 +440,11 @@ public class InventoryWriter {
                 standardWeapons.add(m);
             }
         }
-        List<AmmoMounted> ammoMountedList = sheet.getEntity().getAmmo();
-        List<WeaponBayText> list = computeWeaponBayTexts(capitalWeapons, ammoMountedList);
+        List<WeaponBayText> list = computeWeaponBayTexts(capitalWeapons);
         for (WeaponBayText text : list) {
             capitalBays.add(new WeaponBayInventoryEntry((Aero) sheet.getEntity(), ++weaponBayIndex, text, true));
         }
-        list = computeWeaponBayTexts(standardWeapons, ammoMountedList);
+        list = computeWeaponBayTexts(standardWeapons);
         boolean artemisIV = false;
         boolean artemisV = false;
         boolean apollo = false;
@@ -476,16 +475,15 @@ public class InventoryWriter {
      *
      * @return A list of bays condensed by weapon type and symmetric location
      */
-    private List<WeaponBayText> computeWeaponBayTexts(List<WeaponMounted> weapons, List<AmmoMounted> ammoMountedList) {
+    static List<WeaponBayText> computeWeaponBayTexts(List<WeaponMounted> weapons) {
         List<WeaponBayText> weaponBayTexts = new ArrayList<>();
         // Collection info on weapons to print
         for (WeaponMounted bay : weapons) {
             WeaponBayText wbt = new WeaponBayText(bay.getLocation(), bay.isRearMounted());
             for (WeaponMounted weaponMounted : bay.getBayWeapons()) {
                 if (!wbt.addBayWeapon(weaponMounted)) {continue;}
-                for (AmmoMounted ammo : ammoMountedList) {
-                    if (ammo.getLocation() == weaponMounted.getLocation()
-                          && weaponMounted.getType().getAmmoType() == ammo.getType().getAmmoType()) {
+                for (AmmoMounted ammo : bay.getBayAmmo()) {
+                    if (AmmoType.isAmmoValid(ammo.getType(), weaponMounted.getType())) {
                         wbt.addBayAmmo(weaponMounted.getType(), ammo);
                     }
                 }
