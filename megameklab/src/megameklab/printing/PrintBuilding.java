@@ -33,15 +33,15 @@
 
 package megameklab.printing;
 
-import java.awt.geom.Rectangle2D;
 import java.awt.font.FontRenderContext;
+import java.awt.geom.Rectangle2D;
 import java.awt.print.PageFormat;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.LinkedHashSet;
 import java.util.stream.Collectors;
 
 import megamek.common.bays.Bay;
@@ -51,16 +51,16 @@ import megamek.common.equipment.AmmoType;
 import megamek.common.equipment.Mounted;
 import megamek.common.equipment.PowerGeneratorType;
 import megamek.common.equipment.WeaponType;
-import megameklab.util.BuildingMap;
-import megameklab.util.BuildingMap.Feature;
+import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
-import megamek.common.units.AbstractBuildingEntity;
-import megamek.common.units.MobileStructure;
 import megamek.common.units.IBuilding;
+import megamek.common.units.MobileStructure;
+import megameklab.util.BuildingMap;
+import megameklab.util.BuildingMap.Feature;
 import megameklab.util.BuildingUtil;
-import org.w3c.dom.Element;
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.w3c.dom.svg.SVGRectElement;
 
@@ -283,17 +283,17 @@ public class PrintBuilding extends PrintEntity {
                             }
                         }
                         polygon.setAttribute("data-building-hex", grid.label(hex));
-                        polygon.setAttribute("data-building-features", cellFeatures.stream().map(symbol -> symbol.name().toLowerCase()).collect(Collectors.joining(" ")));
-                        List<Feature> glyphs = cellFeatures.stream().filter(symbol -> symbol != Feature.DOOR).toList();
-                        for (BuildingDesign.Door door : featureIndex.doors(hex, level)) {
+                        polygon.setAttribute("data-building-features", cellFeatures.stream().map(Feature::symbol).collect(Collectors.joining(" ")));
+                        List<Feature> glyphs = cellFeatures.stream().filter(symbol -> !symbol.glyph.isBlank()).toList();
+                        for (BuildingMap.DoorMarker door : featureIndex.doors(hex, level)) {
                             if (door.facing() < 0 || door.facing() > 5) {
                                 continue;
                             }
                             double[] a = corners[(door.facing() + 1) % 6];
                             double[] b = corners[(door.facing() + 2) % 6];
                             double[][] arrow = BuildingMap.doorPoints(a, b);
-                            Element marker = mapPolygon(annotations, arrow, x, y, scale, "#fff");
-                            marker.setAttribute("data-building-symbol", "door");
+                            Element marker = mapPolygon(annotations, arrow, x, y, scale, door.feature().color);
+                            marker.setAttribute("data-building-symbol", door.feature().symbol());
                             marker.setAttribute("data-building-facing", Integer.toString(door.facing()));
                         }
                         if (glyphs.isEmpty()) {
@@ -303,7 +303,7 @@ public class PrintBuilding extends PrintEntity {
                             Element label = element(annotations, "text", "x", Double.toString(x), "y", Double.toString(y + 2.3 * scale),
                                   "font-size", Double.toString(6.5 * scale), "text-anchor", "middle");
                             for (int index = 0; index < glyphs.size(); index++) {
-                                Element glyph = element(label, "tspan", "data-building-symbol", glyphs.get(index).name().toLowerCase(),
+                                Element glyph = element(label, "tspan", "data-building-symbol", glyphs.get(index).symbol(),
                                       "font-size", Double.toString(5.5 * scale), "font-weight", "bold", "dx", Double.toString(index == 0 ? 0 : scale));
                                 glyph.setTextContent(glyphs.get(index).glyph);
                             }
@@ -329,12 +329,12 @@ public class PrintBuilding extends PrintEntity {
     }
 
     private void mapKeySymbol(Element parent, Feature symbol, double x, double y) {
-        if (symbol != Feature.DOOR) {
+        if (!symbol.glyph.isBlank()) {
             mapPolygon(parent, new double[][] { { -6, 0 }, { -3, -4 }, { 3, -4 }, { 6, 0 }, { 3, 4 }, { -3, 4 } }, x, y, 1, symbol.color);
         }
-        Element glyph = element(parent, "g", "data-building-symbol", symbol.name().toLowerCase());
-        if (symbol == Feature.DOOR) {
-            mapPolygon(glyph, new double[][] { { 0, -4 }, { 3.5, 3 }, { -3.5, 3 } }, x, y, 1, "#fff");
+        Element glyph = element(parent, "g", "data-building-symbol", symbol.symbol());
+        if (symbol.glyph.isBlank()) {
+            mapPolygon(glyph, new double[][] { { 0, -4 }, { 3.5, 3 }, { -3.5, 3 } }, x, y, 1, symbol.color);
         } else {
             text(glyph, x, y + 2, 7, symbol.glyph, 6, "middle", "bold");
         }

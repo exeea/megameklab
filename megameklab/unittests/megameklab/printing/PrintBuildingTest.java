@@ -39,23 +39,23 @@ import java.awt.Color;
 import java.awt.print.PageFormat;
 import java.awt.print.Paper;
 import java.io.OutputStream;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import megamek.common.board.CubeCoords;
 import megamek.common.bays.FirstClassQuartersCargoBay;
+import megamek.common.board.CubeCoords;
 import megamek.common.enums.BuildingType;
 import megamek.common.equipment.EquipmentType;
 import megamek.common.equipment.MiscType;
 import megamek.common.loaders.BLKFile;
 import megamek.common.loaders.BLKStructureFile;
-import megamek.common.units.BuildingEntity;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
+import megamek.common.units.BuildingEntity;
 import megamek.common.units.IBuilding;
 import megamek.common.util.BuildingBlock;
 import megameklab.testing.util.InitializeTypes;
@@ -70,8 +70,8 @@ import org.apache.logging.log4j.core.config.Configurator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.w3c.dom.Element;
-import org.w3c.dom.svg.SVGPolygonElement;
 import org.w3c.dom.svg.SVGGElement;
+import org.w3c.dom.svg.SVGPolygonElement;
 import org.w3c.dom.svg.SVGRectElement;
 
 @ExtendWith(InitializeTypes.class)
@@ -297,6 +297,64 @@ class PrintBuildingTest {
             assertEquals("#efcb8d", ((Element) key.getElementsByTagName("polygon").item(0)).getAttribute("fill"));
             if (mode == RecordSheetOptions.ColorMode.LOGO_ONLY) {
                 render(colored, "building-feature-colors");
+            }
+        }
+    }
+
+    @Test
+    void elevatorDoorsPrintOnTheirConfiguredSidesAndLevelsIncludingContinuationPages() throws Exception {
+        var building = BuildingUtil.newBuilding();
+        var hexes = new ArrayList<>(CubeCoords.ZERO.neighbors());
+        hexes.add(CubeCoords.ZERO);
+        BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.FORTRESS, 7, 80, 0, hexes);
+        building.getDesign().getElevators().add(new BuildingDesign.Elevator(CubeCoords.ZERO, 20,
+              Map.of(0, 5, 2, 63, 6, 32, 7, 8)));
+        var expectedSides = Map.of(0, List.of(0, 2), 2, List.of(0, 1, 2, 3, 4, 5), 6, List.of(5));
+        String label = BuildingUtil.sheetGrid(hexes).label(CubeCoords.ZERO);
+        for (var paper : List.of(PaperSize.US_LETTER, PaperSize.ISO_A4)) {
+            var sheet = sheet(building, paper);
+            for (int page = 0; page < 2; page++) {
+                assertTrue(sheet.createDocument(page, pageFormat(paper), true));
+                var hex = (SVGPolygonElement) elements(sheet, "polygon", "occupied").stream()
+                      .filter(cell -> cell.getAttribute("data-building-hex").equals(label)).findFirst().orElseThrow();
+                for (var layer : elements(sheet, "g", "building-map-layer")) {
+                    int floor = Integer.parseInt(layer.getAttribute("data-building-floor"));
+                    var sides = new ArrayList<Integer>();
+                    var polygons = layer.getElementsByTagName("polygon");
+                    for (int index = 0; index < polygons.getLength(); index++) {
+                        var marker = (SVGPolygonElement) polygons.item(index);
+                        if (!marker.getAttribute("data-building-symbol").equals("elevator-door")) {
+                            continue;
+                        }
+                        int side = Integer.parseInt(marker.getAttribute("data-building-facing"));
+                        sides.add(side);
+                        assertEquals("#efcb8d", marker.getAttribute("fill"));
+                        assertEquals(3, marker.getPoints().getNumberOfItems());
+                        var a = hex.getPoints().getItem((side + 1) % 6);
+                        var b = hex.getPoints().getItem((side + 2) % 6);
+                        var tip = marker.getPoints().getItem(0);
+                        var left = marker.getPoints().getItem(1);
+                        var right = marker.getPoints().getItem(2);
+                        assertEquals((a.getX() + b.getX()) / 2, (tip.getX() + left.getX() + right.getX()) / 3, .01);
+                        assertEquals((a.getY() + b.getY()) / 2, (tip.getY() + left.getY() + right.getY()) / 3, .01);
+                    }
+                    assertEquals(expectedSides.getOrDefault(floor, List.of()), sides, "Access sides on level " + floor);
+                }
+                var key = elements(sheet, "g", "building-map-key").getFirst();
+                assertTrue(key.getTextContent().contains("Elevator door"));
+                var groups = key.getElementsByTagName("g");
+                boolean found = false;
+                for (int index = 0; index < groups.getLength(); index++) {
+                    var group = (Element) groups.item(index);
+                    if (group.getAttribute("data-building-symbol").equals("elevator-door")) {
+                        var marker = (SVGPolygonElement) group.getElementsByTagName("polygon").item(0);
+                        assertEquals(3, marker.getPoints().getNumberOfItems());
+                        assertEquals("#efcb8d", marker.getAttribute("fill"));
+                        found = true;
+                    }
+                }
+                assertTrue(found, "The legend must include the amber elevator-door triangle");
+                render(sheet, "building-elevator-doors-" + paper.name() + "-" + page);
             }
         }
     }

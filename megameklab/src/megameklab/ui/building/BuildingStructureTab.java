@@ -53,6 +53,7 @@ import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.Path2D;
 import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
@@ -65,23 +66,22 @@ import java.util.Map;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
-import javax.swing.ButtonGroup;
-import javax.swing.JButton;
-import javax.swing.JCheckBox;
-import javax.swing.JComboBox;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.Icon;
-import javax.swing.JList;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTextArea;
-import javax.swing.JToggleButton;
-import javax.swing.JScrollPane;
 import javax.swing.Scrollable;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 
 import megamek.client.ui.WrapLayout;
 import megamek.common.SimpleTechLevel;
@@ -89,14 +89,14 @@ import megamek.common.board.CubeCoords;
 import megamek.common.enums.BuildingType;
 import megamek.common.enums.Faction;
 import megamek.common.equipment.EquipmentType;
+import megamek.common.equipment.enums.StructureEngine;
 import megamek.common.interfaces.ITechManager;
 import megamek.common.units.AbstractBuildingEntity;
-import megamek.common.units.MobileStructure;
-import megamek.common.units.EntityMovementMode;
-import megamek.common.equipment.enums.StructureEngine;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
+import megamek.common.units.EntityMovementMode;
 import megamek.common.units.IBuilding;
+import megamek.common.units.MobileStructure;
 import megamek.common.units.UnitRole;
 import megamek.common.verifier.TestBuilding;
 import megameklab.ui.generalUnit.BasicInfoView;
@@ -137,11 +137,12 @@ class BuildingStructureTab extends JPanel implements BuildListener {
     private final JLabel selection = new JLabel();
     private final JLabel limits = new JLabel();
     private final JButton remove = new JButton("Remove selected hex");
-    private final Footprint footprint = new Footprint();
-    private final JToggleButton topView = new JToggleButton("Top view", true);
-    private final JToggleButton pancakeView = new JToggleButton("Pancake view");
+    private final Footprint footprint = new Footprint(false);
+    private final Footprint pancake = new Footprint(true);
     private final JPanel legend = new JPanel(new WrapLayout(FlowLayout.LEFT, 12, 4));
     private final Map<BuildingMap.Feature, JLabel> legendEntries = new EnumMap<>(BuildingMap.Feature.class);
+    private final JPanel pancakeLegend = new JPanel(new WrapLayout(FlowLayout.LEFT, 12, 4));
+    private final Map<BuildingMap.Feature, JLabel> pancakeLegendEntries = new EnumMap<>(BuildingMap.Feature.class);
     private final JCheckBox absoluteCoordinates = new JCheckBox("Absolute coordinates");
     private final JPanel sideControls = new JPanel(new WrapLayout(FlowLayout.LEFT));
     private final JCheckBox[] sides = new JCheckBox[6];
@@ -272,16 +273,6 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         absoluteCoordinates.addActionListener(event -> editor.setAbsoluteCoordinates(absoluteCoordinates.isSelected()));
         JPanel mapHeader = new JPanel(new BorderLayout(8, 4));
         mapHeader.add(legend, BorderLayout.CENTER);
-        ButtonGroup views = new ButtonGroup();
-        JPanel mapControls = new JPanel(new WrapLayout(FlowLayout.RIGHT));
-        for (JToggleButton button : List.of(topView, pancakeView)) {
-            button.setName(button.getText());
-            views.add(button);
-            button.addActionListener(event -> refresh());
-            mapControls.add(button);
-        }
-        mapControls.add(absoluteCoordinates);
-        mapHeader.add(mapControls, BorderLayout.SOUTH);
         map.add(mapHeader, BorderLayout.NORTH);
         map.add(new TabScrollPane(footprint), BorderLayout.CENTER);
         geometry.add(map, BorderLayout.CENTER);
@@ -437,6 +428,26 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         return basicInfo;
     }
 
+    JPanel createPancakePane() {
+        JPanel panel = new JPanel(new BorderLayout(0, 6));
+        JPanel header = new JPanel(new BorderLayout());
+        header.add(absoluteCoordinates, BorderLayout.NORTH);
+        pancakeLegend.setName("Building pancake legend");
+        int markerHeight = pancakeLegend.getFontMetrics(pancakeLegend.getFont()).getHeight();
+        for (BuildingMap.Feature feature : BuildingMap.Feature.values()) {
+            JLabel entry = new JLabel(feature.label, new FeatureIcon(feature, markerHeight), SwingConstants.LEADING);
+            entry.setIconTextGap(6);
+            pancakeLegend.add(entry);
+            pancakeLegendEntries.put(feature, entry);
+        }
+        header.add(pancakeLegend, BorderLayout.CENTER);
+        panel.add(header, BorderLayout.NORTH);
+        TabScrollPane scroll = new TabScrollPane(pancake);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        panel.add(scroll, BorderLayout.CENTER);
+        return panel;
+    }
+
     void refresh() {
         refreshing = true;
         basicInfo.removeListener(this);
@@ -483,9 +494,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                     : "up to " + rule.hexes() + " hexes", rule.levels(), entity().getBldgClass() == IBuilding.BRIDGE ? "deck" : "levels")) + "</html>");
         protectionScale.setText(entity().getConstructionCFScale() == 10 ? "<html>Capital CF and armor<br>1 point = 10 standard points</html>"
               : BuildingConstruction.usesHexsides(entity()) ? "Standard CF and armor per occupied hexside" : "Standard CF and armor per hex");
-        geometryHint.setText((pancakeView.isSelected()
-              ? "Highest floor first. Click a layer to open that floor in top view; scroll to see more floors.\n"
-              : "Click + to add a hex; click a hex to select it; double-click to edit its equipment.\n")
+        geometryHint.setText("Click + to add a hex; click a hex to select it; double-click to edit its equipment.\n"
               + (entity().getBldgClass() == IBuilding.BRIDGE
               ? "Bridge decks follow a steady slope. Their ends must meet the underlying map terrain."
               : BuildingConstruction.usesHexsides(entity()) ? "Select occupied hexsides below. All segments share CF, armor and height."
@@ -516,20 +525,29 @@ class BuildingStructureTab extends JPanel implements BuildListener {
               + entity().getLevelLabel(displayedLevel(editor.selectedHex())));
         remove.setEnabled(entity().getInternalBuilding().getCoordsList().size() > 1);
         EnumSet<BuildingMap.Feature> features = EnumSet.noneOf(BuildingMap.Feature.class);
+        EnumSet<BuildingMap.Feature> allFeatures = EnumSet.noneOf(BuildingMap.Feature.class);
         List<BuildingDesign.Door> mapDoors = entity().getDesign().getMapDoors();
         BuildingMap.FeatureIndex featureIndex = BuildingMap.featureIndex(entity(), mapDoors);
         for (CubeCoords hex : entity().getInternalBuilding().getCoordsList()) {
-            for (int level : pancakeView.isSelected() ? BuildingConstruction.mapLevels(entity()) : List.of(displayedLevel(hex))) {
+            for (int level : BuildingConstruction.mapLevels(entity())) {
                 if (BuildingConstruction.occupiesMapLevel(entity(), hex, level)) {
-                    features.addAll(featureIndex.features(hex, level));
+                    allFeatures.addAll(featureIndex.features(hex, level));
+                    if (level == displayedLevel(hex)) {
+                        features.addAll(featureIndex.features(hex, level));
+                    }
                 }
             }
         }
         legendEntries.forEach((feature, entry) -> entry.setVisible(features.contains(feature)));
         legend.setVisible(!features.isEmpty());
         legend.revalidate();
+        pancakeLegendEntries.forEach((feature, entry) -> entry.setVisible(allFeatures.contains(feature)));
+        pancakeLegend.setVisible(!allFeatures.isEmpty());
+        pancakeLegend.revalidate();
         footprint.revalidate();
         footprint.repaint();
+        pancake.revalidate();
+        pancake.repaint();
         refreshing = false;
     }
 
@@ -609,7 +627,8 @@ class BuildingStructureTab extends JPanel implements BuildListener {
     private record FeatureIcon(BuildingMap.Feature feature, int getIconHeight) implements Icon {
         @Override
         public int getIconWidth() {
-            return getIconHeight * 4 / 3;
+            return feature.glyph.isBlank() ? getIconHeight * 4 / 3
+                  : (int) Math.ceil(2 * (getIconHeight - 2) / Math.sqrt(3)) + 2;
         }
 
         @Override
@@ -618,30 +637,46 @@ class BuildingStructureTab extends JPanel implements BuildListener {
             g.translate(x, y);
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             int w = getIconWidth() - 2, h = getIconHeight - 2;
-            Polygon marker = feature == BuildingMap.Feature.DOOR
-                  ? new Polygon(new int[] { w / 2, w - 1, 1 }, new int[] { 1, h, h }, 3)
-                  : new Polygon(new int[] { 1, w / 4, w * 3 / 4, w, w * 3 / 4, w / 4 },
-                        new int[] { h / 2, 1, 1, h / 2, h, h }, 6);
+            Path2D marker = new Path2D.Double();
+            if (feature.glyph.isBlank()) {
+                marker.append(new Polygon(new int[] { w / 2, w - 1, 1 }, new int[] { 1, h, h }, 3), false);
+            } else {
+                // Legend hexes use a regular top view, independent of the pancake projection.
+                double radius = h / Math.sqrt(3);
+                for (int corner = 0; corner < 6; corner++) {
+                    double px = getIconWidth() / 2.0 + radius * Math.cos(corner * Math.PI / 3);
+                    double py = getIconHeight / 2.0 + radius * Math.sin(corner * Math.PI / 3);
+                    if (corner == 0) {
+                        marker.moveTo(px, py);
+                    } else {
+                        marker.lineTo(px, py);
+                    }
+                }
+                marker.closePath();
+            }
             g.setColor(Color.decode(feature.color));
             g.fill(marker);
             g.setColor(Color.BLACK);
             g.draw(marker);
             g.setFont(component.getFont().deriveFont((float) h - 2));
             FontMetrics metrics = g.getFontMetrics();
-            g.drawString(feature.glyph, (w - metrics.stringWidth(feature.glyph)) / 2,
-                  (h - metrics.getHeight()) / 2 + metrics.getAscent());
+            g.drawString(feature.glyph, (getIconWidth() - metrics.stringWidth(feature.glyph)) / 2f,
+                  (getIconHeight - metrics.getHeight()) / 2f + metrics.getAscent());
             g.dispose();
         }
     }
 
     private class Footprint extends JPanel implements Scrollable {
+        private final boolean pancakeView;
         private final Map<CubeCoords, Polygon> cells = new LinkedHashMap<>();
         private final List<Layer> layers = new ArrayList<>();
+        private BuildingDesign.Position revealedSelection;
 
         private record Layer(int level, Rectangle2D bounds, Map<CubeCoords, Polygon> cells) { }
 
-        Footprint() {
-            setName("Building footprint");
+        Footprint(boolean pancakeView) {
+            this.pancakeView = pancakeView;
+            setName(pancakeView ? "Building pancake" : "Building footprint");
             setToolTipText("");
             addMouseListener(new MouseAdapter() {
                 @Override
@@ -649,16 +684,15 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                     if (!javax.swing.SwingUtilities.isLeftMouseButton(event)) {
                         return;
                     }
-                    if (pancakeView.isSelected()) {
+                    if (pancakeView) {
                         for (Layer layer : layers) {
                             if (layer.bounds().contains(event.getPoint())) {
                                 CubeCoords hex = layer.cells().entrySet().stream()
                                       .filter(cell -> cell.getValue().contains(event.getPoint()))
-                                      .map(Map.Entry::getKey).findFirst()
-                                      .orElse(layer.cells().containsKey(editor.selectedHex())
-                                            ? editor.selectedHex() : layer.cells().keySet().iterator().next());
-                                topView.setSelected(true);
-                                editor.selectLocation(hex, entity().getBldgClass() == IBuilding.BRIDGE ? 0 : layer.level());
+                                      .map(Map.Entry::getKey).findFirst().orElse(null);
+                                if (hex != null) {
+                                    editor.selectLocation(hex, entity().getBldgClass() == IBuilding.BRIDGE ? 0 : layer.level());
+                                }
                                 return;
                             }
                         }
@@ -687,9 +721,11 @@ class BuildingStructureTab extends JPanel implements BuildListener {
 
         @Override
         public String getToolTipText(MouseEvent event) {
-            if (pancakeView.isSelected()) {
-                return layers.stream().filter(layer -> layer.bounds().contains(event.getPoint()))
-                      .map(layer -> "Level: " + entity().getLevelLabel(layer.level()) + " — click to open in top view")
+            if (pancakeView) {
+                return layers.stream().flatMap(layer -> layer.cells().entrySet().stream()
+                            .filter(cell -> cell.getValue().contains(event.getPoint()))
+                            .map(cell -> editor.hexLabel(cell.getKey()) + "/" + entity().getLevelLabel(layer.level())
+                                  + " — click to select hex and level"))
                       .findFirst().orElse(null);
             }
             return cells.entrySet().stream().filter(cell -> cell.getValue().contains(event.getPoint()))
@@ -699,18 +735,18 @@ class BuildingStructureTab extends JPanel implements BuildListener {
 
         @Override
         public Dimension getPreferredSize() {
-            if (editor == null || !pancakeView.isSelected()) {
+            if (editor == null || !pancakeView) {
                 return new Dimension(560, 370);
             }
             Rectangle2D bounds = pancakeBounds();
             int height = (int) Math.ceil(BuildingConstruction.mapLevels(entity()).size()
                   * (bounds.getHeight() * pancakeSize(bounds) + 44) + 20);
-            return new Dimension(560, height);
+            return new Dimension(320, height);
         }
 
         @Override
         public Dimension getPreferredScrollableViewportSize() {
-            return new Dimension(560, 370);
+            return new Dimension(pancakeView ? 320 : 560, 370);
         }
 
         @Override
@@ -730,7 +766,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
 
         @Override
         public boolean getScrollableTracksViewportHeight() {
-            return !pancakeView.isSelected() || (getParent() != null && getParent().getHeight() >= getPreferredSize().height);
+            return !pancakeView || (getParent() != null && getParent().getHeight() >= getPreferredSize().height);
         }
 
         @Override
@@ -740,7 +776,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             cells.clear();
             layers.clear();
-            if (pancakeView.isSelected()) {
+            if (pancakeView) {
                 paintPancake(g);
             } else {
                 paintTop(g);
@@ -782,7 +818,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
 
         private double pancakeSize(Rectangle2D bounds) {
             int width = getParent() == null ? getWidth() : getParent().getWidth();
-            return Math.max(1, Math.min(56, ((width > 0 ? width : 560) - 48) / bounds.getWidth()));
+            return Math.max(1, Math.min(56, ((width > 0 ? width : 320) - 48) / bounds.getWidth()));
         }
 
         private void paintPancake(Graphics2D g) {
@@ -830,6 +866,31 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                     }
                 }
             }
+            revealSelection();
+        }
+
+        private void revealSelection() {
+            BuildingDesign.Position selection = new BuildingDesign.Position(editor.selectedHex(),
+                  displayedLevel(editor.selectedHex()));
+            if (selection.equals(revealedSelection)) {
+                return;
+            }
+            for (Layer layer : layers) {
+                Polygon selected = layer.cells().get(selection.hex());
+                if (layer.level() == selection.level() && selected != null) {
+                    revealedSelection = selection;
+                    Rectangle bounds = selected.getBounds();
+                    bounds.grow(8, 8);
+                    // Wait until painting finishes before moving the viewport. Manual scrolling stays untouched
+                    // until the editing location changes again.
+                    SwingUtilities.invokeLater(() -> {
+                        if (selection.equals(revealedSelection)) {
+                            scrollRectToVisible(bounds);
+                        }
+                    });
+                    return;
+                }
+            }
         }
 
         private Point2D center(AffineTransform transform, CubeCoords hex) {
@@ -842,12 +903,11 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                   .stream().anyMatch(position -> position.hex().equals(hex) && position.level() == floor)).count();
         }
 
-                private Map<CubeCoords, Polygon> paintHexes(Graphics2D g, List<CubeCoords> visible, int floor,
-                            AffineTransform transform, double size, boolean pancake, BuildingMap.FeatureIndex featureIndex) {
+        private Map<CubeCoords, Polygon> paintHexes(Graphics2D g, List<CubeCoords> visible, int floor,
+              AffineTransform transform, double size, boolean pancake, BuildingMap.FeatureIndex featureIndex) {
             Map<CubeCoords, Polygon> polygons = new LinkedHashMap<>();
             List<CubeCoords> hexes = entity().getInternalBuilding().getCoordsList();
             BuildingUtil.SheetGrid labels = BuildingUtil.sheetGrid(hexes);
-                        List<BuildingDesign.Door> mapDoors = featureIndex.mapDoors();
             for (CubeCoords hex : visible) {
                 Point2D center = center(transform, hex);
                 double x = center.getX(), y = center.getY();
@@ -868,11 +928,28 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                 boolean wall = occupied && BuildingConstruction.usesHexsides(entity());
                 g.setStroke(new BasicStroke(occupied && !wall ? 2f : 1f));
                 g.setColor(occupied && !wall ? Color.BLACK : Color.GRAY);
-                if (fill != null && selected) {
-                    g.setStroke(new BasicStroke(3f));
-                    g.setColor(new Color(65, 125, 190));
-                }
                 g.draw(polygon);
+            }
+            // Paint selection after adjacent fills, but underneath labels, doors and wall edges. Keep the halo
+            // inside the hex so it cannot cover the incoming elevator shafts outside a pancake layer.
+            Polygon selected = polygons.get(editor.selectedHex());
+            if (selected != null && (!pancake || floor == displayedLevel(editor.selectedHex()))) {
+                Graphics2D highlight = (Graphics2D) g.create();
+                highlight.clip(selected);
+                highlight.setColor(Color.WHITE);
+                highlight.setStroke(new BasicStroke(7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                highlight.draw(selected);
+                highlight.setColor(new Color(30, 105, 210));
+                highlight.setStroke(new BasicStroke(3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                highlight.draw(selected);
+                highlight.dispose();
+            }
+            for (CubeCoords hex : polygons.keySet()) {
+                Point2D center = center(transform, hex);
+                double x = center.getX(), y = center.getY();
+                boolean occupied = hexes.contains(hex);
+                int level = pancake ? floor : displayedLevel(hex);
+                List<BuildingMap.Feature> features = occupied ? featureIndex.features(hex, level) : List.of();
                 g.setColor(occupied ? Color.BLACK : Color.GRAY);
                 String symbols = features.stream().filter(feature -> !feature.glyph.isBlank()).map(feature -> feature.glyph)
                       .collect(java.util.stream.Collectors.joining(" "));
@@ -895,26 +972,27 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                 }
             }
             // Decorations follow every fill so adjacent hexes cannot erase edge symbols.
-            for (BuildingDesign.Door door : mapDoors) {
-                int level = pancake ? floor : displayedLevel(door.position().hex());
-                Polygon polygon = polygons.get(door.position().hex());
-                if (polygon == null || door.facing() < 0 || door.facing() > 5 || level < door.position().level()
-                      || level >= door.position().level() + door.height()) {
-                    continue;
-                }
-                Point2D center = center(transform, door.position().hex());
+            for (Map.Entry<CubeCoords, Polygon> cell : polygons.entrySet()) {
+                int level = pancake ? floor : displayedLevel(cell.getKey());
+                Polygon polygon = cell.getValue();
+                Point2D center = center(transform, cell.getKey());
                 double x = center.getX(), y = center.getY();
-                int a = (door.facing() + 4) % 6, b = (a + 1) % 6;
-                Polygon triangle = new Polygon();
-                for (double[] point : BuildingMap.doorPoints(new double[] { polygon.xpoints[a] - x, polygon.ypoints[a] - y },
-                      new double[] { polygon.xpoints[b] - x, polygon.ypoints[b] - y })) {
-                    triangle.addPoint((int) Math.round(x + point[0]), (int) Math.round(y + point[1]));
+                for (BuildingMap.DoorMarker door : featureIndex.doors(cell.getKey(), level)) {
+                    if (door.facing() < 0 || door.facing() > 5) {
+                        continue;
+                    }
+                    int a = (door.facing() + 4) % 6, b = (a + 1) % 6;
+                    Polygon triangle = new Polygon();
+                    for (double[] point : BuildingMap.doorPoints(new double[] { polygon.xpoints[a] - x, polygon.ypoints[a] - y },
+                          new double[] { polygon.xpoints[b] - x, polygon.ypoints[b] - y })) {
+                        triangle.addPoint((int) Math.round(x + point[0]), (int) Math.round(y + point[1]));
+                    }
+                    g.setStroke(new BasicStroke(1.5f));
+                    g.setColor(Color.decode(door.feature().color));
+                    g.fill(triangle);
+                    g.setColor(Color.BLACK);
+                    g.draw(triangle);
                 }
-                g.setStroke(new BasicStroke(1.5f));
-                g.setColor(Color.WHITE);
-                g.fill(triangle);
-                g.setColor(Color.BLACK);
-                g.draw(triangle);
             }
             if (BuildingConstruction.usesHexsides(entity())) {
                 g.setColor(Color.BLACK);

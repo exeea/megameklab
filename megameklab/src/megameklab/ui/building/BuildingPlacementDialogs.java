@@ -23,9 +23,9 @@ import javax.swing.table.DefaultTableModel;
 
 import megamek.common.bays.Bay;
 import megamek.common.equipment.Mounted;
+import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
-import megamek.common.units.AbstractBuildingEntity;
 import megameklab.util.BuildingUtil;
 
 /** Location editors display sheet coordinates; native cube coordinates never need to be entered by hand. */

@@ -38,17 +38,19 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 import java.util.Map;
 
-import megamek.common.board.CubeCoords;
 import megamek.common.bays.FirstClassQuartersCargoBay;
+import megamek.common.board.CubeCoords;
 import megamek.common.enums.BuildingType;
 import megamek.common.equipment.EquipmentType;
 import megamek.common.loaders.BLKFile;
 import megamek.common.loaders.BLKStructureFile;
-import megamek.common.units.BuildingEntity;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
+import megamek.common.units.BuildingEntity;
 import megamek.common.units.IBuilding;
 import megameklab.testing.util.InitializeTypes;
+import megameklab.util.BuildingMap.DoorMarker;
+import megameklab.util.BuildingMap.Feature;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -64,9 +66,10 @@ class BuildingUtilTest {
 
         var index = BuildingMap.featureIndex(building, List.of(door));
 
-        assertEquals(List.of(BuildingMap.Feature.ELEVATOR, BuildingMap.Feature.DOOR),
+        assertEquals(List.of(BuildingMap.Feature.ELEVATOR, BuildingMap.Feature.DOOR, BuildingMap.Feature.ELEVATOR_DOOR),
               index.features(CubeCoords.ZERO, 1));
-        assertEquals(List.of(door), index.doors(CubeCoords.ZERO, 1));
+        assertEquals(List.of(new DoorMarker(0, Feature.DOOR), new DoorMarker(0, Feature.ELEVATOR_DOOR)),
+              index.doors(CubeCoords.ZERO, 1));
         assertTrue(index.features(CubeCoords.ZERO, 2).isEmpty());
         assertTrue(index.doors(CubeCoords.ZERO, 2).isEmpty());
     }
@@ -81,8 +84,10 @@ class BuildingUtilTest {
 
         var index = BuildingMap.featureIndex(building, List.of(door));
 
-        assertEquals(List.of(BuildingMap.Feature.ELEVATOR, BuildingMap.Feature.DOOR), index.features(CubeCoords.ZERO, 5));
-        assertEquals(List.of(door), index.doors(CubeCoords.ZERO, 5));
+        assertEquals(List.of(BuildingMap.Feature.ELEVATOR, BuildingMap.Feature.DOOR, BuildingMap.Feature.ELEVATOR_DOOR),
+              index.features(CubeCoords.ZERO, 5));
+        assertEquals(List.of(new DoorMarker(2, Feature.DOOR), new DoorMarker(0, Feature.ELEVATOR_DOOR)),
+              index.doors(CubeCoords.ZERO, 5));
     }
 
     @Test
@@ -115,8 +120,8 @@ class BuildingUtilTest {
               index.features(EAST, 1));
         assertTrue(index.features(EAST, 0).isEmpty());
         assertTrue(index.features(outside, -1).isEmpty());
-        assertEquals(doors, index.doors(CubeCoords.ZERO, 2));
-        assertEquals(List.of(door), index.doors(CubeCoords.ZERO, 1));
+        assertEquals(List.of(new DoorMarker(2, Feature.DOOR), new DoorMarker(4, Feature.DOOR)), index.doors(CubeCoords.ZERO, 2));
+        assertEquals(List.of(new DoorMarker(2, Feature.DOOR)), index.doors(CubeCoords.ZERO, 1));
         assertEquals(BuildingMap.Feature.ELEVATOR, BuildingMap.fill(index.features(CubeCoords.ZERO, 2)));
 
         building.getDesign().getElevators().clear();
@@ -147,6 +152,35 @@ class BuildingUtilTest {
     }
 
     private static final CubeCoords EAST = new CubeCoords(1, 0, -1);
+
+    @Test
+    void elevatorDoorMarkersUseExactStopsAndMergeSharedAccessSides() {
+        var building = BuildingUtil.newMobileStructure();
+        BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.FORTRESS, 3, 80, 0,
+              List.of(CubeCoords.ZERO, EAST));
+        BuildingUtil.setHexHeight(building, EAST, 1);
+        var design = building.getDesign();
+        design.getElevators().add(new BuildingDesign.Elevator(CubeCoords.ZERO, 20, Map.of(0, 5, 2, 32, 3, 8)));
+        design.getElevators().add(new BuildingDesign.Elevator(CubeCoords.ZERO, 20, Map.of(0, 1, 2, 32)));
+        design.getElevators().add(new BuildingDesign.Elevator(EAST, 20, Map.of(0, 8, 1, 16)));
+        var structuralDoor = new BuildingDesign.Door(new BuildingDesign.Position(CubeCoords.ZERO, 0), 4, 2);
+        design.getDoors().add(structuralDoor);
+        var index = BuildingMap.featureIndex(building, design.getMapDoors());
+
+        assertEquals(List.of(new DoorMarker(4, Feature.DOOR), new DoorMarker(0, Feature.ELEVATOR_DOOR),
+              new DoorMarker(2, Feature.ELEVATOR_DOOR)), index.doors(CubeCoords.ZERO, 0));
+        assertEquals(List.of(new DoorMarker(4, Feature.DOOR)), index.doors(CubeCoords.ZERO, 1));
+        assertEquals(List.of(new DoorMarker(5, Feature.ELEVATOR_DOOR)), index.doors(CubeCoords.ZERO, 2));
+        assertTrue(index.doors(CubeCoords.ZERO, 3).isEmpty(), "Roof access must not appear on an interior floor");
+        assertEquals(List.of(new DoorMarker(3, Feature.ELEVATOR_DOOR)), index.doors(EAST, 0));
+        assertTrue(index.doors(EAST, 1).isEmpty(), "A shorter hex has no interior at its roof level");
+        assertFalse(index.features(CubeCoords.ZERO, 1).contains(Feature.ELEVATOR_DOOR));
+        assertTrue(index.features(CubeCoords.ZERO, 2).contains(Feature.ELEVATOR_DOOR));
+        assertEquals(List.of(structuralDoor), design.getMapDoors(), "Rendering must not add structural doors");
+        design.getElevators().clear();
+        assertEquals(List.of(new DoorMarker(5, Feature.ELEVATOR_DOOR)), index.doors(CubeCoords.ZERO, 2));
+        assertTrue(BuildingMap.featureIndex(building, design.getMapDoors()).doors(CubeCoords.ZERO, 2).isEmpty());
+    }
 
     @Test
     void groundReferenceRoundTripsWithoutMovingEquipmentDoorsOrElevators() throws Exception {

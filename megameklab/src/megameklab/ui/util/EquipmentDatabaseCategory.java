@@ -55,16 +55,16 @@ import megamek.common.equipment.MiscType;
 import megamek.common.equipment.WeaponType;
 import megamek.common.equipment.enums.BombType;
 import megamek.common.equipment.enums.MiscTypeFlag;
-import megamek.common.units.Aero;
 import megamek.common.units.AbstractBuildingEntity;
+import megamek.common.units.Aero;
 import megamek.common.units.Entity;
 import megamek.common.units.EntityWeightClass;
 import megamek.common.units.Infantry;
 import megamek.common.units.Mek;
 import megamek.common.units.ProtoMek;
 import megamek.common.units.Tank;
-import megamek.common.weapons.tag.TAGWeapon;
 import megamek.common.weapons.infantry.InfantryWeapon;
+import megamek.common.weapons.tag.TAGWeapon;
 import megameklab.util.BattleArmorUtil;
 import megameklab.util.UnitUtil;
 

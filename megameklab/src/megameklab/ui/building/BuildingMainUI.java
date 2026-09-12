@@ -34,14 +34,15 @@
 package megameklab.ui.building;
 
 import java.awt.BorderLayout;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
-import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JSplitPane;
 
 import megamek.common.board.CubeCoords;
 import megamek.common.equipment.Mounted;
@@ -66,13 +67,10 @@ public class BuildingMainUI extends MegaMekLabMainUI {
     private RecordSheetPreviewPanel preview;
     private JLabel status;
     private boolean refreshing;
-    private JComboBox<String> hexSelector;
-    private JComboBox<String> floorSelector;
-    private JButton editLocationEquipment;
-    private JLabel locationHint;
+    private JSplitPane editorSplit;
+    private JLabel editingLocation;
     private CubeCoords selectedHex;
     private int selectedFloor;
-    private boolean selecting;
     private boolean absoluteCoordinates;
 
     public BuildingMainUI() {
@@ -108,6 +106,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
 
     @Override
     public void reloadTabs() {
+        int navigatorWidth = editorSplit == null ? 360 : editorSplit.getRightComponent().getWidth();
         configPane.removeAll();
         removeAll();
         structure = new BuildingStructureTab(this);
@@ -127,8 +126,16 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         configPane.addTab("Construction & Services", systems);
         configPane.addTab("Fluff", new TabScrollPane(fluff));
         configPane.addTab("Record Sheet", preview);
-        add(createLocationSelector(), BorderLayout.NORTH);
-        add(configPane, BorderLayout.CENTER);
+        JPanel navigator = createLocationNavigator();
+        navigator.setPreferredSize(new Dimension(Math.max(240, navigatorWidth), 450));
+        navigator.setMinimumSize(new Dimension(240, 160));
+        configPane.setMinimumSize(new Dimension(400, 160));
+        editorSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, configPane, navigator);
+        editorSplit.setName("Building editor split");
+        editorSplit.setBorder(BorderFactory.createEmptyBorder());
+        editorSplit.setContinuousLayout(true);
+        editorSplit.setResizeWeight(1);
+        add(editorSplit, BorderLayout.CENTER);
         add(status, BorderLayout.SOUTH);
         preview.addComponentListener(new java.awt.event.ComponentAdapter() {
             @Override
@@ -151,7 +158,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         int crewSize = megamek.common.compute.Compute.getFullCrewSize(getEntity());
         getEntity().getCrew().setSize(crewSize);
         getEntity().getCrew().setCurrentSize(crewSize);
-        refreshLocationSelector();
+        refreshLocationNavigator();
         structure.refresh();
         equipment.refresh();
         transport.refresh();
@@ -169,67 +176,32 @@ public class BuildingMainUI extends MegaMekLabMainUI {
         refreshHeader();
     }
 
-    private JPanel createLocationSelector() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        panel.setBorder(BorderFactory.createTitledBorder("Editing location"));
-        hexSelector = new JComboBox<>();
-        hexSelector.setName("Edit hex");
-        floorSelector = new JComboBox<>();
-        floorSelector.setName("Edit floor");
-        panel.add(new JLabel("Hex:"));
-        panel.add(hexSelector);
-        panel.add(new JLabel("Floor:"));
-        panel.add(floorSelector);
-        editLocationEquipment = new JButton("Edit equipment here");
-        editLocationEquipment.addActionListener(e -> showEquipment());
-        panel.add(editLocationEquipment);
-        locationHint = new JLabel();
-        panel.add(locationHint);
-        hexSelector.addActionListener(e -> {
-            if (!selecting && hexSelector.getSelectedIndex() >= 0) {
-                selectLocation(getEntity().getInternalBuilding().getOriginalCoordsList()
-                      .get(hexSelector.getSelectedIndex()), selectedFloor);
-            }
-        });
-        floorSelector.addActionListener(e -> {
-            if (!selecting && floorSelector.getSelectedItem() != null) {
-                selectLocation(selectedHex, getEntity().getInternalBuilding().getHeight(selectedHex)
-                      - 1 - floorSelector.getSelectedIndex());
-            }
-        });
+    private JPanel createLocationNavigator() {
+        JPanel panel = new JPanel(new BorderLayout(0, 6));
+        panel.setName("Building location navigator");
+        panel.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createTitledBorder("Pancake view"),
+              BorderFactory.createEmptyBorder(6, 6, 6, 6)));
+        editingLocation = new JLabel();
+        editingLocation.setName("Editing location");
+        panel.add(editingLocation, BorderLayout.NORTH);
+        panel.add(structure.createPancakePane(), BorderLayout.CENTER);
         return panel;
     }
 
-    private void refreshLocationSelector() {
-        if (hexSelector == null) {
+    private void refreshLocationNavigator() {
+        if (editingLocation == null) {
             return;
         }
-        selecting = true;
-        boolean hasInterior = !BuildingConstruction.hasNoInterior(getEntity());
-        editLocationEquipment.setEnabled(hasInterior);
-        locationHint.setText(hasInterior ? "New equipment is installed at the selected hex and floor."
-              : "This structure has no interior equipment space.");
         var hexes = getEntity().getInternalBuilding().getOriginalCoordsList();
         if (!hexes.contains(selectedHex)) {
             selectedHex = hexes.getFirst();
         }
         int height = getEntity().getInternalBuilding().getHeight(selectedHex);
         selectedFloor = Math.max(0, Math.min(selectedFloor, height - 1));
-        hexSelector.removeAllItems();
-        hexes.forEach(hex -> hexSelector.addItem(hexLabel(hex)));
-        hexSelector.setSelectedIndex(hexes.indexOf(selectedHex));
-        floorSelector.removeAllItems();
         boolean bridge = getEntity().getBldgClass() == megamek.common.units.IBuilding.BRIDGE;
-        floorSelector.setEnabled(!bridge);
-        if (bridge) {
-            floorSelector.addItem("Deck " + getEntity().getLevelLabel(getEntity().getDesign().bridgeDeck(selectedHex)));
-        } else {
-            for (int floor = height - 1; floor >= 0; floor--) {
-                floorSelector.addItem(getEntity().getLevelLabel(floor));
-            }
-            floorSelector.setSelectedItem(getEntity().getLevelLabel(selectedFloor));
-        }
-        selecting = false;
+        int level = bridge ? getEntity().getDesign().bridgeDeck(selectedHex) : selectedFloor;
+        editingLocation.setText("Editing: " + hexLabel(selectedHex) + " / " + (bridge ? "Deck " : "Level ")
+              + getEntity().getLevelLabel(level));
     }
 
     CubeCoords selectedHex() {
@@ -242,7 +214,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
 
     void setAbsoluteCoordinates(boolean absolute) {
         absoluteCoordinates = absolute;
-        refreshLocationSelector();
+        refreshLocationNavigator();
         structure.refresh();
     }
 
@@ -263,7 +235,7 @@ public class BuildingMainUI extends MegaMekLabMainUI {
     void selectLocation(CubeCoords hex, int floor) {
         selectedHex = hex;
         selectedFloor = floor;
-        refreshLocationSelector();
+        refreshLocationNavigator();
         // Navigation is not a construction change: do not schedule an undo snapshot or dirty the unit.
         structure.refresh();
         equipment.refreshPlacement();

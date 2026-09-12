@@ -37,15 +37,16 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import megamek.common.bays.Bay;
 import megamek.common.board.CubeCoords;
 import megamek.common.equipment.BuildingEquipmentType;
 import megamek.common.equipment.Mounted;
+import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
-import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.IBuilding;
 
 /** Feature identity shared by the editing map and printed structure maps. */
@@ -56,7 +57,8 @@ public final class BuildingMap {
 
     public enum Feature {
         BAY("Bay / quarters", "#f3b0b4", "B"), ELEVATOR("Elevator", "#efcb8d", "E"), DECK("Roof facility", "#b5d1bf", "D"),
-        TURRET("Roof turret", "#aca6d2", "T"), DOOR("Door", "#ffffff", "");
+        TURRET("Roof turret", "#aca6d2", "T"), DOOR("Door", "#ffffff", ""),
+        ELEVATOR_DOOR("Elevator door", "#efcb8d", "");
 
         public final String label;
         public final String color;
@@ -67,16 +69,21 @@ public final class BuildingMap {
             this.color = color;
             this.glyph = glyph;
         }
+
+        public String symbol() {
+            return name().toLowerCase(Locale.ROOT).replace('_', '-');
+        }
     }
+
+    /** A rendered door on one hexside; elevator access remains separate from structural doors in the design. */
+    public record DoorMarker(int facing, Feature feature) { }
 
     /** Immutable map-feature snapshot for one render or refresh; rebuild after editing the building. */
     public static final class FeatureIndex {
-        private final List<BuildingDesign.Door> mapDoors;
         private final Map<BuildingDesign.Position, List<Feature>> features = new HashMap<>();
-        private final Map<BuildingDesign.Position, List<BuildingDesign.Door>> doors = new HashMap<>();
+        private final Map<BuildingDesign.Position, List<DoorMarker>> doors = new HashMap<>();
 
         private FeatureIndex(AbstractBuildingEntity building, List<BuildingDesign.Door> mapDoors) {
-            this.mapDoors = List.copyOf(mapDoors);
             Map<CubeCoords, Integer> roofLevels = new HashMap<>();
             for (CubeCoords hex : building.getInternalBuilding().getOriginalCoordsList()) {
                 roofLevels.put(hex, building.getInternalBuilding().getHeight(hex) - 1);
@@ -124,7 +131,7 @@ public final class BuildingMap {
                 }
             }
 
-            for (BuildingDesign.Door door : this.mapDoors) {
+            for (BuildingDesign.Door door : mapDoors) {
                 long start = door.position().level();
                 long end = start + (long) door.height();
                 long firstLevel = Math.max(firstMapLevel(building, door.position().hex()), start);
@@ -132,9 +139,27 @@ public final class BuildingMap {
                 for (long level = firstLevel; level < endLevel; level++) {
                     BuildingDesign.Position position = new BuildingDesign.Position(door.position().hex(), (int) level);
                     add(indexed, position, Feature.DOOR);
-                    doors.computeIfAbsent(position, ignored -> new ArrayList<>()).add(door);
+                    doors.computeIfAbsent(position, ignored -> new ArrayList<>()).add(new DoorMarker(door.facing(), Feature.DOOR));
                 }
             }
+
+            Map<BuildingDesign.Position, Integer> elevatorAccess = new HashMap<>();
+            for (BuildingDesign.Elevator lift : building.getDesign().getElevators()) {
+                lift.exits().forEach((level, mask) -> {
+                    if (level >= firstMapLevel(building, lift.hex()) && level < endMapLevel(building, lift.hex())) {
+                        elevatorAccess.merge(new BuildingDesign.Position(lift.hex(), level), mask, (a, b) -> a | b);
+                    }
+                });
+            }
+            elevatorAccess.forEach((position, mask) -> {
+                for (int facing = 0; facing < 6; facing++) {
+                    if ((mask & (1 << facing)) != 0) {
+                        add(indexed, position, Feature.ELEVATOR_DOOR);
+                        doors.computeIfAbsent(position, ignored -> new ArrayList<>())
+                              .add(new DoorMarker(facing, Feature.ELEVATOR_DOOR));
+                    }
+                }
+            });
 
             indexed.forEach((position, values) -> features.put(position, List.copyOf(values)));
             doors.replaceAll((position, values) -> List.copyOf(values));
@@ -158,11 +183,7 @@ public final class BuildingMap {
             return features.getOrDefault(new BuildingDesign.Position(hex, level), List.of());
         }
 
-        public List<BuildingDesign.Door> mapDoors() {
-            return mapDoors;
-        }
-
-        public List<BuildingDesign.Door> doors(CubeCoords hex, int level) {
+        public List<DoorMarker> doors(CubeCoords hex, int level) {
             return doors.getOrDefault(new BuildingDesign.Position(hex, level), List.of());
         }
     }
