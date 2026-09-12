@@ -55,6 +55,78 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(InitializeTypes.class)
 class BuildingUtilTest {
     @Test
+    void featureIndexBoundsMalformedLevelRangesToTheBuildingHeight() {
+        var building = BuildingUtil.newBuilding();
+        BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.FORTRESS, 2, 80, 0, List.of(CubeCoords.ZERO));
+        var door = new BuildingDesign.Door(new BuildingDesign.Position(CubeCoords.ZERO, 1), 0, Integer.MAX_VALUE);
+        building.getDesign().getElevators().add(new BuildingDesign.Elevator(CubeCoords.ZERO, 20,
+              Map.of(1, 1, Integer.MAX_VALUE, 1)));
+
+        var index = BuildingMap.featureIndex(building, List.of(door));
+
+        assertEquals(List.of(BuildingMap.Feature.ELEVATOR, BuildingMap.Feature.DOOR),
+              index.features(CubeCoords.ZERO, 1));
+        assertEquals(List.of(door), index.doors(CubeCoords.ZERO, 1));
+        assertTrue(index.features(CubeCoords.ZERO, 2).isEmpty());
+        assertTrue(index.doors(CubeCoords.ZERO, 2).isEmpty());
+    }
+
+    @Test
+    void featureIndexUsesBridgeDeckElevationInsteadOfStructuralHeight() {
+        var building = BuildingUtil.newBuilding();
+        BuildingUtil.configure(building, BuildingType.RAIL, IBuilding.BRIDGE, 1, 80, 0, List.of(CubeCoords.ZERO));
+        building.getDesign().getBridgeDecks().put(CubeCoords.ZERO, 5);
+        var door = new BuildingDesign.Door(new BuildingDesign.Position(CubeCoords.ZERO, 5), 2, 1);
+        building.getDesign().getElevators().add(new BuildingDesign.Elevator(CubeCoords.ZERO, 20, Map.of(0, 1, 5, 1)));
+
+        var index = BuildingMap.featureIndex(building, List.of(door));
+
+        assertEquals(List.of(BuildingMap.Feature.ELEVATOR, BuildingMap.Feature.DOOR), index.features(CubeCoords.ZERO, 5));
+        assertEquals(List.of(door), index.doors(CubeCoords.ZERO, 5));
+    }
+
+    @Test
+    void featureIndexPreservesFeatureOrderRoofProjectionAndDoorOrder() throws Exception {
+        var building = BuildingUtil.newMobileStructure();
+        BuildingUtil.configure(building, BuildingType.HEAVY, IBuilding.FORTRESS, 3, 80, 0, List.of(CubeCoords.ZERO, EAST));
+        BuildingUtil.setHexHeight(building, EAST, 2);
+        var quarters = new FirstClassQuartersCargoBay(2);
+        building.addTransporter(quarters);
+        building.getDesign().getBaySpace().put(quarters, List.of(
+              new BuildingDesign.Space(new BuildingDesign.Position(CubeCoords.ZERO, 2), 10),
+              new BuildingDesign.Space(new BuildingDesign.Position(EAST, 0), 0),
+              new BuildingDesign.Space(new BuildingDesign.Position(EAST, 1), 10)));
+        var deck = building.addEquipment(EquipmentType.get("Building Flight Deck"), 0);
+        deck.setSponsonTurretMounted(true);
+        var outside = new CubeCoords(-1, 0, 1);
+        building.getDesign().getEquipmentSpace().put(deck, List.of(
+              new BuildingDesign.Position(CubeCoords.ZERO, 0), new BuildingDesign.Position(EAST, 0),
+              new BuildingDesign.Position(outside, 0)));
+        building.getDesign().getElevators().add(new BuildingDesign.Elevator(CubeCoords.ZERO, 20, Map.of(0, 1, 3, 1)));
+        var door = new BuildingDesign.Door(new BuildingDesign.Position(CubeCoords.ZERO, 1), 2, 2);
+        var secondDoor = new BuildingDesign.Door(new BuildingDesign.Position(CubeCoords.ZERO, 2), 4, 1);
+        var doors = List.of(door, secondDoor);
+
+        var index = BuildingMap.featureIndex(building, doors);
+
+        assertEquals(List.of(BuildingMap.Feature.BAY, BuildingMap.Feature.ELEVATOR, BuildingMap.Feature.DECK,
+              BuildingMap.Feature.TURRET, BuildingMap.Feature.DOOR), index.features(CubeCoords.ZERO, 2));
+        assertEquals(List.of(BuildingMap.Feature.BAY, BuildingMap.Feature.DECK, BuildingMap.Feature.TURRET),
+              index.features(EAST, 1));
+        assertTrue(index.features(EAST, 0).isEmpty());
+        assertTrue(index.features(outside, -1).isEmpty());
+        assertEquals(doors, index.doors(CubeCoords.ZERO, 2));
+        assertEquals(List.of(door), index.doors(CubeCoords.ZERO, 1));
+        assertEquals(BuildingMap.Feature.ELEVATOR, BuildingMap.fill(index.features(CubeCoords.ZERO, 2)));
+
+        building.getDesign().getElevators().clear();
+        deck.setSponsonTurretMounted(false);
+        var refreshed = BuildingMap.featureIndex(building, List.of());
+        assertEquals(List.of(BuildingMap.Feature.BAY, BuildingMap.Feature.DECK), refreshed.features(CubeCoords.ZERO, 2));
+        assertEquals(5, index.features(CubeCoords.ZERO, 2).size(), "A render's snapshot must remain stable");
+    }
+
+    @Test
     void shorterMobileHexRemovesEquipmentAndDoorsOnDeletedFloors() throws Exception {
         var mobile = BuildingUtil.newMobileStructure();
         var hexes = List.copyOf(mobile.getInternalBuilding().getOriginalCoordsList());

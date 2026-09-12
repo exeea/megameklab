@@ -221,20 +221,18 @@ public class PrintBuilding extends PrintEntity {
         hexes.forEach(hex -> occupied.put(grid.position(hex), hex));
         double width = 30 * (grid.columns() - 1) + 40 + 6 * (grid.rows() - 1);
         double height = 12 * (grid.rows() + .5);
-          List<Integer> mapLevels = BuildingConstruction.mapLevels(building).stream().skip((long) currentPage * LEVELS_PER_PAGE)
+        List<Integer> mapLevels = BuildingConstruction.mapLevels(building).stream().skip((long) currentPage * LEVELS_PER_PAGE)
               .limit(LEVELS_PER_PAGE).toList();
         int levels = mapLevels.size();
         if (levels <= 0) {
             return;
         }
         List<BuildingDesign.Door> mapDoors = building.getDesign().getMapDoors();
-        Map<BuildingDesign.Position, List<Feature>> features = new LinkedHashMap<>();
+        BuildingMap.FeatureIndex featureIndex = BuildingMap.featureIndex(building, mapDoors);
         LinkedHashSet<Feature> symbols = new LinkedHashSet<>();
         for (CubeCoords hex : hexes) {
             for (int level : mapLevels) {
-            List<Feature> values = BuildingMap.features(building, hex, level, mapDoors);
-                features.put(new BuildingDesign.Position(hex, level), values);
-                symbols.addAll(values);
+                symbols.addAll(featureIndex.features(hex, level));
             }
         }
         int keyColumns = Math.max(1, (int) (box.getWidth() / 110));
@@ -258,7 +256,7 @@ public class PrintBuilding extends PrintEntity {
                     boolean present = hex != null && BuildingConstruction.occupiesMapLevel(building, hex, level)
                           && BuildingConstruction.segmentsInHex(building, hex) > 0;
                     boolean wall = BuildingConstruction.usesHexsides(building);
-                    List<Feature> cellFeatures = present ? features.get(new BuildingDesign.Position(hex, level)) : List.of();
+                    List<Feature> cellFeatures = present ? featureIndex.features(hex, level) : List.of();
                     Feature fill = BuildingMap.fill(cellFeatures);
                     double staggeredRow = row + (column & 1) * .5;
                     double x = (column * 30 - staggeredRow * 6 + 20 + 6 * (grid.rows() - 1)) * scale;
@@ -287,9 +285,8 @@ public class PrintBuilding extends PrintEntity {
                         polygon.setAttribute("data-building-hex", grid.label(hex));
                         polygon.setAttribute("data-building-features", cellFeatures.stream().map(symbol -> symbol.name().toLowerCase()).collect(Collectors.joining(" ")));
                         List<Feature> glyphs = cellFeatures.stream().filter(symbol -> symbol != Feature.DOOR).toList();
-                        for (BuildingDesign.Door door : mapDoors) {
-                            if (door.facing() < 0 || door.facing() > 5 || !door.position().hex().equals(hex) || level < door.position().level()
-                                  || level >= door.position().level() + door.height()) {
+                        for (BuildingDesign.Door door : featureIndex.doors(hex, level)) {
+                            if (door.facing() < 0 || door.facing() > 5) {
                                 continue;
                             }
                             double[] a = corners[(door.facing() + 1) % 6];

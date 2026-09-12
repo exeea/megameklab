@@ -34,7 +34,11 @@
 package megameklab.util;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
 import megamek.common.bays.Bay;
 import megamek.common.board.CubeCoords;
 import megamek.common.equipment.BuildingEquipmentType;
@@ -42,6 +46,7 @@ import megamek.common.equipment.Mounted;
 import megamek.common.units.BuildingConstruction;
 import megamek.common.units.BuildingDesign;
 import megamek.common.units.AbstractBuildingEntity;
+import megamek.common.units.IBuilding;
 
 /** Feature identity shared by the editing map and printed structure maps. */
 public final class BuildingMap {
@@ -64,83 +69,106 @@ public final class BuildingMap {
         }
     }
 
-    public static List<Feature> features(AbstractBuildingEntity building, CubeCoords hex, int level) {
-        return features(building, hex, level, building.getDesign().getMapDoors());
-    }
+    /** Immutable map-feature snapshot for one render or refresh; rebuild after editing the building. */
+    public static final class FeatureIndex {
+        private final List<BuildingDesign.Door> mapDoors;
+        private final Map<BuildingDesign.Position, List<Feature>> features = new HashMap<>();
+        private final Map<BuildingDesign.Position, List<BuildingDesign.Door>> doors = new HashMap<>();
 
-    public static List<Feature> features(AbstractBuildingEntity building, CubeCoords hex, int level,
-          List<BuildingDesign.Door> mapDoors) {
-        List<Feature> result = new ArrayList<>(5);
-        boolean bay = false;
-        for (Bay transportBay : building.getTransportBays()) {
-            for (BuildingDesign.Space space : BuildingConstruction.baySpaces(building, transportBay)) {
-                if (space.tons() > 0 && space.position().hex().equals(hex) && space.position().level() == level) {
-                    bay = true;
-                    break;
+        private FeatureIndex(AbstractBuildingEntity building, List<BuildingDesign.Door> mapDoors) {
+            this.mapDoors = List.copyOf(mapDoors);
+            Map<CubeCoords, Integer> roofLevels = new HashMap<>();
+            for (CubeCoords hex : building.getInternalBuilding().getOriginalCoordsList()) {
+                roofLevels.put(hex, building.getInternalBuilding().getHeight(hex) - 1);
+            }
+            Map<BuildingDesign.Position, EnumSet<Feature>> indexed = new HashMap<>();
+            for (Bay transportBay : building.getTransportBays()) {
+                for (BuildingDesign.Space space : BuildingConstruction.baySpaces(building, transportBay)) {
+                    if (space.tons() > 0) {
+                        add(indexed, space.position(), Feature.BAY);
+                    }
                 }
             }
-            if (bay) {
-                break;
-            }
-        }
-        if (bay) {
-            result.add(Feature.BAY);
-        }
 
-        boolean elevator = false;
-        for (BuildingDesign.Elevator lift : building.getDesign().getElevators()) {
-            if (lift.hex().equals(hex) && lift.reaches(level)) {
-                elevator = true;
-                break;
+            for (BuildingDesign.Elevator lift : building.getDesign().getElevators()) {
+                if (!lift.exits().isEmpty()) {
+                    int firstLevel = Math.max(firstMapLevel(building, lift.hex()), lift.lowerLevel());
+                    long endLevel = Math.min(endMapLevel(building, lift.hex()), (long) lift.upperLevel() + 1);
+                    for (long level = firstLevel; level < endLevel; level++) {
+                        add(indexed, new BuildingDesign.Position(lift.hex(), (int) level), Feature.ELEVATOR);
+                    }
+                }
             }
-        }
-        if (elevator) {
-            result.add(Feature.ELEVATOR);
-        }
 
-        if (level == building.getInternalBuilding().getHeight(hex) - 1) {
-            boolean deck = false;
-            boolean turret = false;
             for (Mounted<?> mount : building.getEquipment()) {
                 if (mount.isOneShotAmmo() || mount.isWeaponGroup()) {
                     continue;
                 }
-                boolean inHex = false;
-                for (BuildingDesign.Position position : BuildingConstruction.equipmentPositions(building, mount)) {
-                    if (position.hex().equals(hex)) {
-                        inHex = true;
-                        break;
-                    }
-                }
-                if (!inHex) {
+                boolean deck = mount.getType() instanceof BuildingEquipmentType facility && facility.getFacility().isRoof();
+                boolean turret = mount.isSponsonTurretMounted();
+                if (!deck && !turret) {
                     continue;
                 }
-                if (mount.getType() instanceof BuildingEquipmentType facility && facility.getFacility().isRoof()) {
-                    deck = true;
-                }
-                if (mount.isSponsonTurretMounted()) {
-                    turret = true;
-                }
-                if (deck && turret) {
-                    break;
+                for (BuildingDesign.Position position : BuildingConstruction.equipmentPositions(building, mount)) {
+                    Integer roofLevel = roofLevels.get(position.hex());
+                    if (roofLevel == null) {
+                        continue;
+                    }
+                    BuildingDesign.Position roof = new BuildingDesign.Position(position.hex(), roofLevel);
+                    if (deck) {
+                        add(indexed, roof, Feature.DECK);
+                    }
+                    if (turret) {
+                        add(indexed, roof, Feature.TURRET);
+                    }
                 }
             }
-            if (deck) {
-                result.add(Feature.DECK);
+
+            for (BuildingDesign.Door door : this.mapDoors) {
+                long start = door.position().level();
+                long end = start + (long) door.height();
+                long firstLevel = Math.max(firstMapLevel(building, door.position().hex()), start);
+                long endLevel = Math.min(endMapLevel(building, door.position().hex()), end);
+                for (long level = firstLevel; level < endLevel; level++) {
+                    BuildingDesign.Position position = new BuildingDesign.Position(door.position().hex(), (int) level);
+                    add(indexed, position, Feature.DOOR);
+                    doors.computeIfAbsent(position, ignored -> new ArrayList<>()).add(door);
+                }
             }
-            if (turret) {
-                result.add(Feature.TURRET);
-            }
+
+            indexed.forEach((position, values) -> features.put(position, List.copyOf(values)));
+            doors.replaceAll((position, values) -> List.copyOf(values));
         }
 
-        for (BuildingDesign.Door door : mapDoors) {
-            if (door.position().hex().equals(hex) && level >= door.position().level()
-                  && level < door.position().level() + door.height()) {
-                result.add(Feature.DOOR);
-                break;
-            }
+        private static void add(Map<BuildingDesign.Position, EnumSet<Feature>> indexed,
+              BuildingDesign.Position position, Feature feature) {
+            indexed.computeIfAbsent(position, ignored -> EnumSet.noneOf(Feature.class)).add(feature);
         }
-        return result;
+
+        private static int firstMapLevel(AbstractBuildingEntity building, CubeCoords hex) {
+            return building.getBldgClass() == IBuilding.BRIDGE ? building.getDesign().bridgeDeck(hex) : 0;
+        }
+
+        private static long endMapLevel(AbstractBuildingEntity building, CubeCoords hex) {
+            return building.getBldgClass() == IBuilding.BRIDGE ? (long) building.getDesign().bridgeDeck(hex) + 1
+                  : building.getInternalBuilding().getHeight(hex);
+        }
+
+        public List<Feature> features(CubeCoords hex, int level) {
+            return features.getOrDefault(new BuildingDesign.Position(hex, level), List.of());
+        }
+
+        public List<BuildingDesign.Door> mapDoors() {
+            return mapDoors;
+        }
+
+        public List<BuildingDesign.Door> doors(CubeCoords hex, int level) {
+            return doors.getOrDefault(new BuildingDesign.Position(hex, level), List.of());
+        }
+    }
+
+    public static FeatureIndex featureIndex(AbstractBuildingEntity building, List<BuildingDesign.Door> mapDoors) {
+        return new FeatureIndex(building, mapDoors);
     }
 
     public static Feature fill(List<Feature> features) {

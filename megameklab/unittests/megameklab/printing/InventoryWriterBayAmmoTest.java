@@ -60,6 +60,10 @@ class InventoryWriterBayAmmoTest {
               EquipmentType.get("Ammo NAC/35"), Aero.LOC_NOSE);
         differentRack.setShotsLeft(20);
         bay.addAmmoToBay(differentRack);
+        AmmoMounted differentType = (AmmoMounted) ship.addEquipment(
+              EquipmentType.get("IS Ammo AC/20"), Aero.LOC_NOSE);
+        differentType.setShotsLeft(20);
+        bay.addAmmoToBay(differentType);
         AmmoMounted unrelatedBay = (AmmoMounted) ship.addEquipment(
               EquipmentType.get("Ammo NAC/20"), Aero.LOC_NOSE);
         unrelatedBay.setShotsLeft(10);
@@ -73,4 +77,95 @@ class InventoryWriterBayAmmoTest {
         assertEquals(List.of(correct), rows.getFirst().weaponAmmo.get(weapon.getType()));
         assertEquals(30, rows.getFirst().weaponAmmo.get(weapon.getType()).getFirst().getBaseShotsLeft());
     }
+
+    @Test
+    void ammoMatchingIgnoresOrderButPreservesDuplicateBinCountsAndIndividualShots() throws Exception {
+        Warship ship = new Warship();
+        var left = bay(ship, Warship.LOC_LBS, false, 1, 10, 10, 20);
+        var reordered = bay(ship, Warship.LOC_RBS, false, 1, 20, 10, 10);
+        var differentCounts = bay(ship, Warship.LOC_RBS, false, 1, 20, 20, 10);
+        var sameTotal = bay(ship, Warship.LOC_RBS, false, 1, 15, 15, 10);
+
+        assertEquals(1, InventoryWriter.computeWeaponBayTexts(List.of(left, reordered)).size());
+        assertEquals(2, InventoryWriter.computeWeaponBayTexts(List.of(left, differentCounts)).size());
+        assertEquals(2, InventoryWriter.computeWeaponBayTexts(List.of(left, sameTotal)).size());
+    }
+
+    @Test
+    void repeatedWeaponsDoNotDuplicateAmmoAndEmptyBinsAreOmitted() throws Exception {
+        Warship ship = new Warship();
+        var bay = bay(ship, Warship.LOC_LBS, false, 3, 0, 10, 20);
+        var row = InventoryWriter.computeWeaponBayTexts(List.of(bay)).getFirst();
+        var weapon = bay.getBayWeapons().getFirst().getType();
+
+        assertEquals(3, row.weapons.get(weapon));
+        assertEquals(bay.getBayAmmo().subList(1, 3), row.weaponAmmo.get(weapon));
+    }
+
+    @Test
+    void weaponAndAugmentationCountsArePartOfTheCombination() throws Exception {
+        Warship ship = new Warship();
+        var left = bay(ship, Warship.LOC_LBS, false, 2, 10);
+        var right = bay(ship, Warship.LOC_RBS, false, 2, 10);
+        var single = bay(ship, Warship.LOC_RBS, false, 1, 10);
+        var leftLink = ship.addEquipment(EquipmentType.get("ISPPCCapacitor"), Warship.LOC_LBS);
+        leftLink.setLinked(left.getBayWeapons().getFirst());
+        assertEquals(2, InventoryWriter.computeWeaponBayTexts(List.of(left, right)).size());
+        var rightLink = ship.addEquipment(EquipmentType.get("ISPPCCapacitor"), Warship.LOC_RBS);
+        rightLink.setLinked(right.getBayWeapons().getFirst());
+        assertEquals(1, InventoryWriter.computeWeaponBayTexts(List.of(left, right)).size());
+        var singleLink = ship.addEquipment(EquipmentType.get("ISPPCCapacitor"), Warship.LOC_RBS);
+        singleLink.setLinked(single.getBayWeapons().getFirst());
+        assertEquals(2, InventoryWriter.computeWeaponBayTexts(List.of(left, single)).size());
+        var extraLink = ship.addEquipment(EquipmentType.get("ISPPCCapacitor"), Warship.LOC_RBS);
+        extraLink.setLinked(right.getBayWeapons().getLast());
+        assertEquals(2, InventoryWriter.computeWeaponBayTexts(List.of(left, right)).size());
+    }
+
+    @Test
+    void frontSidesRequireMatchingRearFlagsAndRowsCombineOnlyOnce() throws Exception {
+        Warship ship = new Warship();
+        var left = bay(ship, Warship.LOC_FLS, false, 1);
+        var rightRear = bay(ship, Warship.LOC_FRS, true, 1);
+        var right = bay(ship, Warship.LOC_FRS, false, 1);
+        var secondRight = bay(ship, Warship.LOC_FRS, false, 1);
+        var rows = InventoryWriter.computeWeaponBayTexts(List.of(left, rightRear, right, secondRight));
+
+        assertEquals(List.of(List.of(Warship.LOC_FLS, Warship.LOC_FRS), List.of(Warship.LOC_FRS),
+              List.of(Warship.LOC_FRS)), rows.stream().map(row -> row.loc).toList());
+        assertEquals(1, rows.stream().filter(row -> row.rear).count());
+    }
+
+    @Test
+    void broadsidePairingRetainsTheFirstBayRegardlessOfRearFlag() throws Exception {
+        Warship ship = new Warship();
+        var leftRear = bay(ship, Warship.LOC_LBS, true, 1, 10, 20);
+        var left = bay(ship, Warship.LOC_LBS, false, 1, 20, 10);
+        var rightRear = bay(ship, Warship.LOC_RBS, true, 1, 20, 10);
+        var right = bay(ship, Warship.LOC_RBS, false, 1, 10, 20);
+        for (var bays : List.of(List.of(leftRear, left, right, rightRear), List.of(rightRear, right, left, leftRear))) {
+            var rows = InventoryWriter.computeWeaponBayTexts(bays);
+            assertEquals(2, rows.size());
+            for (int i = 0; i < rows.size(); i++) {
+                assertEquals(List.of(Warship.LOC_LBS, Warship.LOC_RBS), rows.get(i).loc);
+                assertEquals(bays.get(i).isRearMounted(), rows.get(i).rear);
+                assertEquals(bays.get(i).getBayAmmo(), rows.get(i).weaponAmmo.get(bays.get(i).getBayWeapons().getFirst().getType()));
+            }
+        }
+    }
+
+    private static WeaponMounted bay(Warship ship, int location, boolean rear, int weapons, int... shots)
+          throws Exception {
+        var bay = (WeaponMounted) ship.addEquipment(EquipmentType.get("Capital AC Bay"), location, rear);
+        for (int i = 0; i < weapons; i++) {
+            bay.addWeaponToBay((WeaponMounted) ship.addEquipment(EquipmentType.get("NAC20"), location));
+        }
+        for (int count : shots) {
+            var ammo = (AmmoMounted) ship.addEquipment(EquipmentType.get("Ammo NAC/20"), location);
+            ammo.setShotsLeft(count);
+            bay.addAmmoToBay(ammo);
+        }
+        return bay;
+    }
+
 }

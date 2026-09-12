@@ -39,9 +39,12 @@ import static megameklab.printing.PrintRecordSheet.FONT_SIZE_VERY_SMALL;
 import static megameklab.printing.PrintRecordSheet.svgNS;
 
 import java.text.NumberFormat;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -60,6 +63,7 @@ import megamek.common.equipment.MiscMounted;
 import megamek.common.equipment.MiscType;
 import megamek.common.equipment.Mounted;
 import megamek.common.equipment.WeaponMounted;
+import megamek.common.equipment.WeaponType;
 import megamek.common.equipment.enums.MiscTypeFlag;
 import megamek.common.units.Aero;
 import megamek.common.units.Entity;
@@ -477,32 +481,64 @@ public class InventoryWriter {
      */
     static List<WeaponBayText> computeWeaponBayTexts(List<WeaponMounted> weapons) {
         List<WeaponBayText> weaponBayTexts = new ArrayList<>();
-        // Collection info on weapons to print
+        Map<CandidateKey, Deque<WeaponBayText>> uncombinedBays = new HashMap<>();
+        // Collect info on weapons to print.
         for (WeaponMounted bay : weapons) {
             WeaponBayText wbt = new WeaponBayText(bay.getLocation(), bay.isRearMounted());
+            Map<AmmoKey, List<AmmoMounted>> ammoByCompatibility = ammoByCompatibility(bay.getBayAmmo());
             for (WeaponMounted weaponMounted : bay.getBayWeapons()) {
-                if (!wbt.addBayWeapon(weaponMounted)) {continue;}
-                for (AmmoMounted ammo : bay.getBayAmmo()) {
-                    if (AmmoType.isAmmoValid(ammo.getType(), weaponMounted.getType())) {
-                        wbt.addBayAmmo(weaponMounted.getType(), ammo);
-                    }
+                if (!wbt.addBayWeapon(weaponMounted)) {
+                    continue;
+                }
+                WeaponType weaponType = weaponMounted.getType();
+                for (AmmoMounted ammo : ammoByCompatibility.getOrDefault(
+                      new AmmoKey(weaponType.getAmmoType(), weaponType.getRackSize()), List.of())) {
+                    wbt.addBayAmmo(weaponType, ammo);
                 }
             }
-            // Combine or add
-            boolean combined = false;
-            for (WeaponBayText combine : weaponBayTexts) {
-                if (combine.canCombine(wbt)) {
-                    combine.combine(wbt);
-                    combined = true;
-                    break;
-                }
-            }
-            if (!combined) {
+            int location = bay.getLocation();
+            int opposingLocation = WeaponBayText.opposingLocation(location);
+            if (opposingLocation < 0) {
                 weaponBayTexts.add(wbt);
+                continue;
+            }
+            WeaponBayText.CombinationKey signature = wbt.combinationKey();
+            // Only front-side/wing bays distinguish rear mounts. A single FIFO for the other
+            // locations preserves the first compatible row, regardless of its rear flag.
+            boolean rear = WeaponBayText.rearMustMatch(location) && bay.isRearMounted();
+            CandidateKey opposingKey = new CandidateKey(signature, opposingLocation, rear);
+            Deque<WeaponBayText> candidates = uncombinedBays.get(opposingKey);
+            if (candidates == null) {
+                weaponBayTexts.add(wbt);
+                CandidateKey key = new CandidateKey(signature, location, rear);
+                uncombinedBays.computeIfAbsent(key, ignored -> new ArrayDeque<>())
+                      .addLast(wbt);
+            } else {
+                candidates.removeFirst().combine(wbt);
+                if (candidates.isEmpty()) {
+                    uncombinedBays.remove(opposingKey);
+                }
             }
         }
         Collections.sort(weaponBayTexts);
         return weaponBayTexts;
+    }
+
+    private record AmmoKey(AmmoType.AmmoTypeEnum type, int rackSize) { }
+
+    private record CandidateKey(WeaponBayText.CombinationKey signature, int location, boolean rear) { }
+
+    /** Same type/rack compatibility as AmmoType.isAmmoValid, preserving bin order within each bucket. */
+    private static Map<AmmoKey, List<AmmoMounted>> ammoByCompatibility(List<AmmoMounted> ammo) {
+        Map<AmmoKey, List<AmmoMounted>> result = new HashMap<>();
+        for (AmmoMounted mounted : ammo) {
+            AmmoType type = mounted.getType();
+            if (type != null) {
+                result.computeIfAbsent(new AmmoKey(type.getAmmoType(), type.getRackSize()), key -> new ArrayList<>())
+                      .add(mounted);
+            }
+        }
+        return result;
     }
 
     public double startingY() {

@@ -517,10 +517,11 @@ class BuildingStructureTab extends JPanel implements BuildListener {
         remove.setEnabled(entity().getInternalBuilding().getCoordsList().size() > 1);
         EnumSet<BuildingMap.Feature> features = EnumSet.noneOf(BuildingMap.Feature.class);
         List<BuildingDesign.Door> mapDoors = entity().getDesign().getMapDoors();
+        BuildingMap.FeatureIndex featureIndex = BuildingMap.featureIndex(entity(), mapDoors);
         for (CubeCoords hex : entity().getInternalBuilding().getCoordsList()) {
             for (int level : pancakeView.isSelected() ? BuildingConstruction.mapLevels(entity()) : List.of(displayedLevel(hex))) {
                 if (BuildingConstruction.occupiesMapLevel(entity(), hex, level)) {
-                    features.addAll(BuildingMap.features(entity(), hex, level, mapDoors));
+                    features.addAll(featureIndex.features(hex, level));
                 }
             }
         }
@@ -749,6 +750,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
 
         private void paintTop(Graphics2D g) {
             List<CubeCoords> hexes = entity().getInternalBuilding().getCoordsList();
+            BuildingMap.FeatureIndex featureIndex = BuildingMap.featureIndex(entity(), entity().getDesign().getMapDoors());
             LinkedHashSet<CubeCoords> visible = new LinkedHashSet<>(hexes);
             hexes.forEach(hex -> visible.addAll(hex.neighbors()));
             // Keep the construction origin and the first two added rings fixed while editing.
@@ -760,7 +762,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
             double size = Math.max(1, Math.min((getWidth() - 30.0) / width,
                   (getHeight() - 30.0) / (Math.sqrt(3) * height)));
             AffineTransform transform = new AffineTransform(size, 0, 0, size, getWidth() / 2.0, getHeight() / 2.0);
-            cells.putAll(paintHexes(g, List.copyOf(visible), editor.selectedFloor(), transform, size, false));
+            cells.putAll(paintHexes(g, List.copyOf(visible), editor.selectedFloor(), transform, size, false, featureIndex));
         }
 
         private Rectangle2D pancakeBounds() {
@@ -787,6 +789,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
             Rectangle2D bounds = pancakeBounds();
             double size = pancakeSize(bounds), step = bounds.getHeight() * size + 44;
             List<Integer> levels = BuildingConstruction.mapLevels(entity());
+            BuildingMap.FeatureIndex featureIndex = BuildingMap.featureIndex(entity(), entity().getDesign().getMapDoors());
             double top = Math.max(10, (getHeight() - levels.size() * step) / 2);
             double x = (getWidth() - bounds.getWidth() * size) / 2 - bounds.getX() * size;
             for (int index = levels.size() - 1; index >= 0; index--) {
@@ -806,7 +809,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                 g.drawString(count, getWidth() - 24 - g.getFontMetrics().stringWidth(count), (float) y + 18);
                 AffineTransform transform = new AffineTransform(size, 0, -.35 * size, .38 * size,
                       x, y + 32 - bounds.getY() * size);
-                Map<CubeCoords, Polygon> polygons = paintHexes(g, hexes, level, transform, size, true);
+                Map<CubeCoords, Polygon> polygons = paintHexes(g, hexes, level, transform, size, true, featureIndex);
                 layers.add(new Layer(level, hit, polygons));
                 // Outgoing shafts cover this floor; the next higher floor then covers the incoming shafts.
                 if (index > 0) {
@@ -839,12 +842,12 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                   .stream().anyMatch(position -> position.hex().equals(hex) && position.level() == floor)).count();
         }
 
-        private Map<CubeCoords, Polygon> paintHexes(Graphics2D g, List<CubeCoords> visible, int floor,
-              AffineTransform transform, double size, boolean pancake) {
+                private Map<CubeCoords, Polygon> paintHexes(Graphics2D g, List<CubeCoords> visible, int floor,
+                            AffineTransform transform, double size, boolean pancake, BuildingMap.FeatureIndex featureIndex) {
             Map<CubeCoords, Polygon> polygons = new LinkedHashMap<>();
             List<CubeCoords> hexes = entity().getInternalBuilding().getCoordsList();
             BuildingUtil.SheetGrid labels = BuildingUtil.sheetGrid(hexes);
-            List<BuildingDesign.Door> mapDoors = entity().getDesign().getMapDoors();
+                        List<BuildingDesign.Door> mapDoors = featureIndex.mapDoors();
             for (CubeCoords hex : visible) {
                 Point2D center = center(transform, hex);
                 double x = center.getX(), y = center.getY();
@@ -857,7 +860,7 @@ class BuildingStructureTab extends JPanel implements BuildListener {
                 boolean occupied = hexes.contains(hex);
                 int level = pancake ? floor : displayedLevel(hex);
                 boolean selected = occupied && hex.equals(editor.selectedHex()) && level == displayedLevel(editor.selectedHex());
-                List<BuildingMap.Feature> features = occupied ? BuildingMap.features(entity(), hex, level, mapDoors) : List.of();
+                List<BuildingMap.Feature> features = occupied ? featureIndex.features(hex, level) : List.of();
                 BuildingMap.Feature fill = BuildingMap.fill(features);
                 g.setColor(fill != null ? Color.decode(fill.color) : selected ? new Color(180, 210, 240)
                       : occupied ? new Color(230, 230, 230) : Color.WHITE);
