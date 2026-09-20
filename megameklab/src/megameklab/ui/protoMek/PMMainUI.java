@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2018-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMekLab.
  *
@@ -57,7 +57,7 @@ import megameklab.ui.generalUnit.QuirksTab;
 import megameklab.ui.util.TabScrollPane;
 
 /**
- * Main UI for building protomeks
+ * Main UI for building ProtoMeks
  *
  * @author Neoancient
  */
@@ -153,7 +153,7 @@ public class PMMainUI extends MegaMekLabMainUI {
         }
         if (null == oldEntity) {
             newUnit.setChassis("New");
-            newUnit.setModel("Protomek");
+            newUnit.setModel("ProtoMek");
             newUnit.setYear(3145);
         } else {
             copyUnitBasics(newUnit, oldEntity);
