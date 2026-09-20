@@ -152,7 +152,6 @@ public class PMChassisView extends BuildView implements ActionListener, ChangeLi
         add(createLabel(resourceMap, "lblEnhancements", "ProtomekChassisView.lblEnhancements.text"), gbc);
 
         gbc.gridx = 1;
-        gbc.gridy++;
         chkMyomerBooster.setText(resourceMap.getString("ProtomekChassisView.chkMyomerBooster.text"));
         chkMyomerBooster.setToolTipText(resourceMap.getString("ProtomekChassisView.chkMyomerBooster.tooltip"));
         add(chkMyomerBooster, gbc);
