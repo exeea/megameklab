@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2018-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMekLab.
  *
@@ -48,16 +48,16 @@ import megamek.common.verifier.TestProtoMek;
 import megameklab.ui.MegaMekLabMainUI;
 import megameklab.ui.dialog.FloatingEquipmentDatabaseDialog;
 import megameklab.ui.generalUnit.AbstractEquipmentTab;
-import megameklab.ui.generalUnit.FluffTab;
 import megameklab.ui.generalUnit.AnalysisTab;
-import megameklab.ui.generalUnit.PreviewTab;
 import megameklab.ui.generalUnit.AvailabilityTab;
-import megameklab.util.CConfig;
+import megameklab.ui.generalUnit.FluffTab;
+import megameklab.ui.generalUnit.PreviewTab;
 import megameklab.ui.generalUnit.QuirksTab;
 import megameklab.ui.util.TabScrollPane;
+import megameklab.util.CConfig;
 
 /**
- * Main UI for building protomeks
+ * Main UI for building ProtoMeks
  *
  * @author Neoancient
  */
@@ -153,7 +153,7 @@ public class PMMainUI extends MegaMekLabMainUI {
         }
         if (null == oldEntity) {
             newUnit.setChassis("New");
-            newUnit.setModel("Protomek");
+            newUnit.setModel("ProtoMek");
             newUnit.setYear(3145);
         } else {
             copyUnitBasics(newUnit, oldEntity);
