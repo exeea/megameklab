@@ -35,10 +35,8 @@ package megameklab.ui.building;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.util.List;
 import javax.swing.BorderFactory;
-import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -48,7 +46,6 @@ import megamek.common.board.CubeCoords;
 import megamek.common.equipment.Mounted;
 import megamek.common.interfaces.ITechManager;
 import megamek.common.units.AbstractBuildingEntity;
-import megamek.common.units.BuildingConstruction;
 import megamek.common.units.Entity;
 import megamek.common.units.MobileStructure;
 import megameklab.ui.MegaMekLabMainUI;
