@@ -36,6 +36,8 @@ package megameklab.printing;
 import java.awt.font.FontRenderContext;
 import java.awt.geom.Rectangle2D;
 import java.awt.print.PageFormat;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -46,6 +48,7 @@ import java.util.Map;
 import java.util.ResourceBundle;
 import java.util.stream.Collectors;
 
+import jakarta.annotation.Nullable;
 import megamek.common.bays.Bay;
 import megamek.common.board.Coords;
 import megamek.common.board.CubeCoords;
@@ -249,7 +252,7 @@ public class PrintBuilding extends PrintEntity {
 
     private BuildingTemplateLayout templateLayout() {
         if (templateLayout == null) {
-            Document template = loadSVG(getSVGDirectoryName(false), "building_template_default.svg");
+            Document template = measuringTemplate("building_template_default.svg");
             Rectangle2D box = getRectBBox((SVGRectElement) template.getElementById("buildingTemplate"));
             double scale = sheetScale(templatePageFormat);
             // Some templates extend beyond the selected paper. Use only the rectangle's printable intersection.
@@ -723,11 +726,28 @@ public class PrintBuilding extends PrintEntity {
         }
     }
 
+    /**
+     * Loads a template that is only measured, to count pages before any page is drawn. When the release template is
+     * not installed, as when unit tests run without the staged data folder, the copy in the unit test template folder
+     * is used instead.
+     *
+     * @param fileName the template file name
+     *
+     * @return the template, or {@code null} if neither copy exists
+     */
+    private @Nullable Document measuringTemplate(String fileName) {
+        String directory = getSVGDirectoryName(false);
+        if (!Files.exists(Path.of(directory, fileName))) {
+            directory = getSVGDirectoryName(true);
+        }
+        return loadSVG(directory, fileName);
+    }
+
     private List<InventoryPage> inventoryPages() {
         if (plannedInventory != null) {
             return plannedInventory;
         }
-        Document template = getSVGDocument() == null ? loadSVG(getSVGDirectoryName(false), "building_default.svg") : getSVGDocument();
+        Document template = getSVGDocument() == null ? measuringTemplate("building_default.svg") : getSVGDocument();
         Rectangle2D box = getRectBBox((SVGRectElement) template.getElementById(INVENTORY));
         double available = box.getHeight() - 14;
         int capacity = (int) Math.floor(available / (InventoryWriter.MIN_FONT_SIZE * InventoryWriter.MIN_LINE_HEIGHT_TO_FONT_SIZE));
@@ -855,8 +875,9 @@ public class PrintBuilding extends PrintEntity {
 
     private Element element(Element parent, String name, String... attributes) {
         Element element = getSVGDocument().createElementNS(svgNS, name);
-        for (int i = 0; i < attributes.length; i += 2) {
-            element.setAttribute(attributes[i], attributes[i + 1]);
+        // Attributes come in name/value pairs; a trailing name without a value is ignored.
+        for (int index = 0; index + 1 < attributes.length; index += 2) {
+            element.setAttribute(attributes[index], attributes[index + 1]);
         }
         parent.appendChild(element);
         return element;
