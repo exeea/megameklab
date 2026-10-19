@@ -43,6 +43,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.ResourceBundle;
 import java.util.stream.Collectors;
 
 import megamek.common.bays.Bay;
@@ -70,6 +71,7 @@ import org.w3c.dom.svg.SVGRectElement;
 public class PrintBuilding extends PrintEntity {
     private static final int LEVELS_PER_PAGE = 6;
     private static final FontRenderContext TEXT_CONTEXT = new FontRenderContext(null, true, true);
+    private static final ResourceBundle I18N = ResourceBundle.getBundle("megameklab.resources.Views");
     private List<InventoryPage> plannedInventory;
     private final AbstractBuildingEntity building;
     private int currentPage;
@@ -112,7 +114,7 @@ public class PrintBuilding extends PrintEntity {
         currentPage = pageNum;
         if (pageNum < getRecordPageCount()) {
             super.processImage(pageNum, pageFormat);
-            setTextField("pageNumber", "Page " + (pageNum + 1) + " / " + getRecordPageCount());
+            setTextField("pageNumber", localized("PrintBuilding.pageNumber", pageNum + 1, getRecordPageCount()));
         } else {
             Element copyright = getSVGDocument().getElementById(COPYRIGHT);
             if (copyright != null) {
@@ -121,7 +123,7 @@ public class PrintBuilding extends PrintEntity {
             Element title = getSVGDocument().getElementById(TITLE);
             Rectangle2D area = getRectBBox((SVGRectElement) getSVGDocument().getElementById("buildingTemplate"));
             title.setAttribute("style", title.getAttribute("style") + ";" + MML_FIELD_WIDTH + ":" + area.getWidth());
-            setTextField(TITLE, (building.getShortNameRaw() + " TEMPLATE").toUpperCase(Locale.ROOT));
+            setTextField(TITLE, localized("PrintBuilding.title.template", building.getShortNameRaw()).toUpperCase(Locale.ROOT));
             drawTemplate(pageNum - getRecordPageCount(), pageFormat);
         }
         // Keep the selected sheet font, with a PDF-safe sans-serif fallback when it is not installed.
@@ -139,9 +141,9 @@ public class PrintBuilding extends PrintEntity {
     @Override
     protected String getRecordSheetTitle() {
         if (building instanceof MobileStructure) {
-            return "Mobile Structure Record Sheet";
+            return localized("PrintBuilding.title.mobileStructure");
         }
-        return "Structure Record Sheet";
+        return localized("PrintBuilding.title.structure");
     }
 
     @Override
@@ -158,11 +160,11 @@ public class PrintBuilding extends PrintEntity {
     protected void writeTextFields() {
         setTextField(TITLE, getRecordSheetTitle().toUpperCase());
         setTextField(TYPE, building.getShortNameRaw(), true);
-        setTextField("levels", building.getBldgClass() == IBuilding.BRIDGE ? "Decks: " + BuildingConstruction.mapLevels(building).stream()
-              .map(building::getLevelLabel).collect(Collectors.joining(",")) : Integer.toString(building.getInternalBuilding().getBuildingHeight()));
+        setTextField("levels", building.getBldgClass() == IBuilding.BRIDGE ? localized("PrintBuilding.decks", BuildingConstruction.mapLevels(building).stream()
+              .map(building::getLevelLabel).collect(Collectors.joining(","))) : Integer.toString(building.getInternalBuilding().getBuildingHeight()));
         setTextField(MP_WALK, building instanceof MobileStructure mobile
               ? NumberFormat.getNumberInstance().format(mobile.getMaximumMP()) : "0");
-        setTextField("movementType", building instanceof MobileStructure mobile ? mobile.getMovementModeAsString() : "Static");
+        setTextField("movementType", building instanceof MobileStructure mobile ? mobile.getMovementModeAsString() : localized("PrintBuilding.movement.static"));
         if (!building.isClan() && !building.isMixedTech()) {
             hideElement("techClanCheck");
         }
@@ -177,7 +179,8 @@ public class PrintBuilding extends PrintEntity {
             generators = mobile.getPowerSystem().getEngineName();
         }
         setTextField("powerplant", BuildingConstruction.hasNoInterior(building) || BuildingConstruction.usesHexsides(building)
-              ? "NA" : generators.isBlank() ? "External supply" : generators, true);
+              ? localized("PrintBuilding.powerPlant.notApplicable")
+              : generators.isBlank() ? localized("PrintBuilding.powerPlant.externalSupply") : generators, true);
         setTextField("buildingCrew", Integer.toString(building.getNCrew()));
         if (showPilotInfo()) {
             setTextField("buildingGunnery", Integer.toString(building.getCrew().getGunnery()));
@@ -196,9 +199,11 @@ public class PrintBuilding extends PrintEntity {
         double columnWidth = box.getWidth() / 2;
         for (int column = 0; column < 2; column++) {
             double x = box.getX() + column * columnWidth;
-            text(canvas, x + 13, box.getY() + 7, 26, BuildingConstruction.usesHexsides(building) ? "Hex/Side" : "Hex", 6.7f, "middle", "bold");
-            text(canvas, x + columnWidth * .52, box.getY() + 7, 25, building.getConstructionCFScale() == 10 ? "CF*" : "CF", 6.7f, "middle", "bold");
-            text(canvas, x + columnWidth * .84, box.getY() + 7, 27, "Armor", 6.7f, "middle", "bold");
+            text(canvas, x + 13, box.getY() + 7, 26, BuildingConstruction.usesHexsides(building)
+                  ? localized("PrintBuilding.protection.hexSide") : localized("PrintBuilding.protection.hex"), 6.7f, "middle", "bold");
+            text(canvas, x + columnWidth * .52, box.getY() + 7, 25, building.getConstructionCFScale() == 10
+                  ? localized("PrintBuilding.protection.capitalCF") : localized("PrintBuilding.protection.cf"), 6.7f, "middle", "bold");
+            text(canvas, x + columnWidth * .84, box.getY() + 7, 27, localized("PrintBuilding.protection.armor"), 6.7f, "middle", "bold");
             for (int row = 0; row < rows; row++) {
                 double y = box.getY() + 18 + row * step;
                 if (y > box.getMaxY() - 2) {
@@ -357,7 +362,7 @@ public class PrintBuilding extends PrintEntity {
         if (angle < -90) { angle += 180; }
         var label = element(marker, "g", "transform", String.format(Locale.ROOT, "translate(%f %f) rotate(%f)",
               mx + 14 * nx + shift * tx, my + 14 * ny + shift * ty, angle));
-        addTextElementToFit(label, 0, 2, 28, "to " + destination, 7, "middle", "normal", "#666", null, null);
+        addTextElementToFit(label, 0, 2, 28, localized("PrintBuilding.template.continuation", destination), 7, "middle", "normal", "#666", null, null);
     }
 
     @Override
@@ -486,7 +491,7 @@ public class PrintBuilding extends PrintEntity {
                 }
             }
             text(layer, width * scale, height * scale + 10, width * scale,
-                  "Level: " + building.getLevelLabel(level, true), 7, "end", "bold");
+                  localized("PrintBuilding.map.level", building.getLevelLabel(level, true)), 7, "end", "bold");
         }
         if (!symbols.isEmpty()) {
             Element key = element((Element) region.getParentNode(), "g", "class", "building-map-key", "transform",
@@ -578,35 +583,37 @@ public class PrintBuilding extends PrintEntity {
             }
             if (first.getType().isVariableSize()) {
                 group.stream().collect(Collectors.groupingBy(Mounted::getSize, LinkedHashMap::new, Collectors.counting()))
-                      .forEach((size, count) -> entries.add(note("equipment-size", "Size " + size + " (×" + count + ")",
+                      .forEach((size, count) -> entries.add(note("equipment-size", localized("PrintBuilding.inventory.equipmentSize", size, count),
                             BuildingUtil.locationLabel(building, first.getLocation()))));
             }
             for (Mounted<?> mount : group) {
                 List<BuildingDesign.Position> spaces = building.getDesign().getEquipmentSpace().get(mount);
                 if (spaces != null && !spaces.isEmpty()) {
                     for (BuildingDesign.Position position : spaces) {
-                        entries.add(note("space-" + building.getEquipmentNum(mount), "Mass share: %.2f t".formatted(mount.getTonnage() / spaces.size()),
+                        entries.add(note("space-" + building.getEquipmentNum(mount), localized("PrintBuilding.inventory.massShare", mount.getTonnage() / spaces.size()),
                               BuildingUtil.locationLabel(building, BuildingConstruction.location(building, position))));
                     }
                 }
                 if (building.getDesign().getPcmtSources().containsKey(mount)) {
-                    entries.add(note("pcmt-source", "PCMT source: " + building.getDesign().getPcmtSources().get(mount) + " t", ""));
+                    entries.add(note("pcmt-source", localized("PrintBuilding.inventory.pcmtSource", building.getDesign().getPcmtSources().get(mount)), ""));
                 }
             }
         }
         for (Bay bay : building.getTransportBays()) {
-            String name = "%s (%s t)".formatted(bay.getTransporterType(), NumberFormat.getInstance().format(bay.getWeight()));
+            String name = localized("PrintBuilding.inventory.bay", bay.getTransporterType(),
+                  NumberFormat.getInstance().format(bay.getWeight()));
             entries.add(new InventoryGroup("bay-" + bay.getBayNumber(), -1,
                   List.<String[]>of(new String[] { "1", name, "—", "", "", "", "", "" }), false));
             if (building.getDesign().getBaySpace().containsKey(bay)) {
                 for (BuildingDesign.Space space : BuildingConstruction.baySpaces(building, bay)) {
-                    entries.add(note("bay-space", "Space: %.2f t".formatted(space.tons()),
+                    entries.add(note("bay-space", localized("PrintBuilding.inventory.baySpace", space.tons()),
                           BuildingUtil.locationLabel(building, BuildingConstruction.location(building, space.position()))));
                 }
             }
         }
         if (building.getTroopCarryingSpace() > 0) {
-            String name = "Infantry compartment (%s t)".formatted(NumberFormat.getInstance().format(building.getTroopCarryingSpace()));
+            String name = localized("PrintBuilding.inventory.infantryCompartment",
+                  NumberFormat.getInstance().format(building.getTroopCarryingSpace()));
             entries.add(new InventoryGroup("infantry-compartment", -1,
                   List.<String[]>of(new String[] { "1", name, "—", "", "", "", "", "" }), false));
         }
@@ -620,51 +627,53 @@ public class PrintBuilding extends PrintEntity {
     }
 
     private String mountDescription(Mounted<?> mount) {
-        String result = BuildingConstruction.isCapital(mount.getType()) ? "Upward (capital)"
-              : mount.isSponsonTurretMounted() ? "Roof turret (T)" : mount.getFacing() >= 0 && mount.getFacing() < 6
-              ? BuildingUtil.facingLabel(mount.getFacing()) + (mount.isPintleTurretMounted() ? " (P)" : " fixed") : "";
-        return result + (building.getDesign().getAutomatedWeapons().contains(mount) ? "; auto, Gunnery 5" : "");
+        String result = BuildingConstruction.isCapital(mount.getType()) ? localized("PrintBuilding.mount.capital")
+              : mount.isSponsonTurretMounted() ? localized("PrintBuilding.mount.roofTurret") : mount.getFacing() >= 0 && mount.getFacing() < 6
+              ? BuildingUtil.facingLabel(mount.getFacing()) + (mount.isPintleTurretMounted()
+              ? localized("PrintBuilding.mount.pintle") : localized("PrintBuilding.mount.fixed")) : "";
+        return result + (building.getDesign().getAutomatedWeapons().contains(mount) ? localized("PrintBuilding.mount.automated") : "");
     }
 
     private void appendDesign(List<InventoryGroup> entries) {
         BuildingDesign design = building.getDesign();
         entries.add(note("classification", (building.getBldgClass() == IBuilding.TENT || building.getBldgClass() == IBuilding.FENCE
               ? "" : building.getBuildingType() + " / ") + (building.getBldgClass() == IBuilding.STANDARD
-                    ? "Standard" : IBuilding.className(building.getBldgClass())), ""));
+                    ? localized("PrintBuilding.design.standardClass") : IBuilding.className(building.getBldgClass())), ""));
         if (building.getConstructionCFScale() == 10) {
-            entries.add(note("capital-protection", "CF and armor: capital points (×10 standard)", "All"));
+            entries.add(note("capital-protection", localized("PrintBuilding.design.capitalProtection"), "All"));
         }
         if (building.hasEnvironmentalSealing()) {
-            entries.add(note("sealing", "Environmental sealing", "All"));
+            entries.add(note("sealing", localized("PrintBuilding.design.sealing"), "All"));
         }
         if (design.hasHeavyMetal()) {
-            entries.add(note("heavy-metal", "Heavy-metal superstructure", "All"));
+            entries.add(note("heavy-metal", localized("PrintBuilding.design.heavyMetal"), "All"));
         }
         if (design.isTunnel()) {
-            entries.add(note("tunnel", "Tunnel construction", "All"));
+            entries.add(note("tunnel", localized("PrintBuilding.design.tunnel"), "All"));
         }
         if (design.isOpenSpace()) {
-            entries.add(note("open-space", "Open-space: 600 t total; lowest floor equipment", "All"));
+            entries.add(note("open-space", localized("PrintBuilding.design.openSpace"), "All"));
         }
         if (BuildingConstruction.usesHexsides(building)) {
-            entries.add(note("hexsides", "CF / armor / capacity apply per hexside", "All"));
+            entries.add(note("hexsides", localized("PrintBuilding.design.hexsides"), "All"));
         }
         if (building.getBldgClass() == IBuilding.BRIDGE) {
-            entries.add(note("bridge", "Decks only; ends must meet map terrain", "All"));
+            entries.add(note("bridge", localized("PrintBuilding.design.bridge"), "All"));
         }
         if (design.hasRoofClearance()) {
-            entries.add(note("roof-clearance", "Cave: ≥1 level roof clearance", "All"));
+            entries.add(note("roof-clearance", localized("PrintBuilding.design.roofClearance"), "All"));
         }
         if (design.getCeiling() != BuildingDesign.Ceiling.STANDARD) {
-            entries.add(note("ceiling", design.getCeiling() == BuildingDesign.Ceiling.HIGH ? "High ceilings" : "Low ceilings", "All"));
+            entries.add(note("ceiling", design.getCeiling() == BuildingDesign.Ceiling.HIGH
+                  ? localized("PrintBuilding.design.highCeilings") : localized("PrintBuilding.design.lowCeilings"), "All"));
         }
         if (design.getSite() != BuildingDesign.Site.SURFACE) {
-            entries.add(note("site", design.getSite() + "; cover " + design.getDepth() + " levels", "All"));
+            entries.add(note("site", localized("PrintBuilding.design.site", design.getSite(), design.getDepth()), "All"));
         }
         addDoorNotes(entries);
         for (BuildingDesign.Elevator lift : design.getElevators()) {
             String hex = BuildingUtil.sheetGrid(building.getInternalBuilding().getOriginalCoordsList()).label(lift.hex());
-            entries.add(note("elevator", "Elevator: " + lift.capacity() + " t", hex));
+            entries.add(note("elevator", localized("PrintBuilding.design.elevator", lift.capacity()), hex));
             lift.exits().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(exit -> {
                 List<String> sides = new ArrayList<>();
                 for (int side = 0; side < 6; side++) {
@@ -673,9 +682,9 @@ public class PrintBuilding extends PrintEntity {
                     }
                 }
                 String level = BuildingUtil.roofLevelLabel(building, exit.getKey());
-                entries.add(note("elevator-stop", "Lift access: " + String.join(", ", sides), hex + "/" + level));
+                entries.add(note("elevator-stop", localized("PrintBuilding.design.liftAccess", String.join(", ", sides)), hex + "/" + level));
             });
-            entries.add(note("elevator-current", "Current elevator level: ______", hex));
+            entries.add(note("elevator-current", localized("PrintBuilding.design.currentElevatorLevel"), hex));
         }
     }
 
@@ -708,7 +717,8 @@ public class PrintBuilding extends PrintEntity {
                 // Compass direction follows the same unprojected normal used to draw the linked arrow.
                 return compass.get(Math.floorMod((int) Math.round(Math.atan2(tip.x() - base.x(), base.y() - tip.y()) / (Math.PI / 4)), 8));
             }).distinct().sorted(java.util.Comparator.comparingInt(compass::indexOf)).collect(Collectors.joining("/"));
-            entries.add(note("door", "Door " + directions + ": " + door.height() + (door.height() == 1 ? " level high" : " levels high"),
+            String doorKey = door.height() == 1 ? "PrintBuilding.design.doorOneLevel" : "PrintBuilding.design.doorLevels";
+            entries.add(note("door", localized(doorKey, directions, door.height()),
                   hexes + "/" + building.getLevelLabel(door.position().level(), true)));
         }
     }
@@ -794,7 +804,10 @@ public class PrintBuilding extends PrintEntity {
         float font = page.font();
         double[] x = { .025, .065, .485, .625, .725, .805, .885, .97 };
         double[] widths = { .04, .34, .145, .11, .07, .07, .07, .07 };
-        String[] headers = { "Qty", "Type", "Hex/Loc", "Dmg", "Min", "Sht", "Med", "Lng" };
+        String[] headers = { localized("PrintBuilding.inventory.quantity"), localized("PrintBuilding.inventory.type"),
+              localized("PrintBuilding.inventory.location"), localized("PrintBuilding.inventory.damage"),
+              localized("PrintBuilding.inventory.minimum"), localized("PrintBuilding.inventory.short"),
+              localized("PrintBuilding.inventory.medium"), localized("PrintBuilding.inventory.long") };
         for (int i = 0; i < headers.length; i++) {
             text(canvas, box.getX() + x[i] * box.getWidth(), box.getY() + 6, widths[i] * box.getWidth(),
                   headers[i], 5.8f, i == 1 ? "start" : "middle", "bold");
@@ -825,6 +838,19 @@ public class PrintBuilding extends PrintEntity {
     private void line(Element parent, double x1, double y1, double x2, double y2, String stroke, double width) {
         element(parent, "line", "x1", Double.toString(x1), "y1", Double.toString(y1), "x2", Double.toString(x2),
               "y2", Double.toString(y2), "stroke", stroke, "stroke-width", Double.toString(width));
+    }
+
+    /**
+     * Looks up a printed label in the MegaMekLab {@code Views} bundle and fills in its placeholders.
+     *
+     * @param key       the resource key
+     * @param arguments values for the {@code String.format} placeholders in the label, if any
+     *
+     * @return the localized label
+     */
+    private static String localized(String key, Object... arguments) {
+        String pattern = I18N.getString(key);
+        return arguments.length == 0 ? pattern : pattern.formatted(arguments);
     }
 
     private Element element(Element parent, String name, String... attributes) {
