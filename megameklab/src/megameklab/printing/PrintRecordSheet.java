@@ -60,6 +60,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.imageio.ImageIO;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
@@ -122,6 +124,8 @@ public abstract class PrintRecordSheet implements Printable, IdConstants {
     public static final double TABLE_RATIO = 0.8;
 
     private static final String TEMPLATE_DIRECTORY = "data/images/recordsheets/";
+    /** A font directory entry in the FOP configuration; group 1 is the path. */
+    private static final Pattern FOP_FONT_DIRECTORY = Pattern.compile("<directory[^>]*>([^<]*)</directory>");
     private static final String UNIT_TEST_TEMPLATE_DIRECTORY = "testresources/" + TEMPLATE_DIRECTORY;
 
     public static final String svgNS = SVGDOMImplementation.SVG_NAMESPACE_URI;
@@ -641,6 +645,7 @@ public abstract class PrintRecordSheet implements Printable, IdConstants {
         } catch (IOException ignored) {
             logger.warn("Failed to load fop-config.xml");
         }
+        configXml = withoutMissingFontDirectories(configXml);
 
         // Define font directories based on OS
         String osName = System.getProperty("os.name").toLowerCase();
@@ -694,6 +699,29 @@ public abstract class PrintRecordSheet implements Printable, IdConstants {
             callback.accept(pageNumber + firstPage);
         }
         return new ByteArrayInputStream(output.toByteArray());
+    }
+
+    /**
+     * Removes font directories named in the FOP configuration that do not exist, such as {@code data/fonts} when the
+     * data folder is not staged. FOP fails on a missing font directory instead of skipping it.
+     *
+     * @param configXml the FOP configuration
+     *
+     * @return the configuration with only existing font directories
+     */
+    static String withoutMissingFontDirectories(String configXml) {
+        Matcher matcher = FOP_FONT_DIRECTORY.matcher(configXml);
+        StringBuilder result = new StringBuilder();
+        while (matcher.find()) {
+            String directory = matcher.group(1).trim();
+            boolean isExistingDirectory = new File(directory).isDirectory();
+            if (!isExistingDirectory) {
+                logger.debug("[PdfExport] Font directory {} does not exist and is skipped", directory);
+            }
+            matcher.appendReplacement(result, isExistingDirectory ? Matcher.quoteReplacement(matcher.group()) : "");
+        }
+        matcher.appendTail(result);
+        return result.toString();
     }
 
     public GraphicsNode build() {

@@ -34,7 +34,9 @@
 package megameklab.ui.building;
 
 import java.awt.BorderLayout;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.GridLayout;
 import java.util.List;
 import javax.swing.BorderFactory;
@@ -49,6 +51,7 @@ import javax.swing.JTextArea;
 import javax.swing.SpinnerNumberModel;
 
 import megamek.client.ui.WrapLayout;
+import megamek.client.ui.util.UIUtil;
 import megamek.common.equipment.enums.StructureEngine;
 import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.BuildingConstruction;
@@ -57,6 +60,16 @@ import megameklab.util.BuildingUtil;
 
 /** Optional construction, service access and a complete, always available construction report. */
 class BuildingSystemsTab extends JPanel {
+    /** Unscaled gap and padding between sections, in pixels at 100% GUI scale. */
+    private static final int SECTION_GAP = 8;
+    /** Unscaled vertical gap between option rows and the padding inside the options box. */
+    private static final int OPTION_GAP = 6;
+    /** Unscaled extra width for the service panels' borders when computing the minimum size. */
+    private static final int SERVICE_PANEL_MARGIN = 24;
+    /** Unscaled minimum height of the tab. */
+    private static final int MINIMUM_HEIGHT = 160;
+    /** Unscaled font size of the construction report. */
+    private static final int REPORT_FONT_SIZE = 12;
     private final BuildingMainUI editor;
     private final JCheckBox sealing = new JCheckBox("Environmental sealing");
     private final JCheckBox heavyMetal = new JCheckBox("Heavy-metal superstructure");
@@ -73,7 +86,8 @@ class BuildingSystemsTab extends JPanel {
     private final JSpinner combatHours = new JSpinner(new SpinnerNumberModel(0, 0, 24, 1));
     private final JCheckBox minimumCrew = new JCheckBox("Use minimum operating crew", true);
     private final JSpinner crewCount = new JSpinner(new SpinnerNumberModel(0, 0, Integer.MAX_VALUE, 1));
-    private final JPanel totals = new JPanel(new BorderLayout(8, 8));
+    private final JPanel totals = new JPanel(new BorderLayout(UIUtil.scaleForGUI(SECTION_GAP),
+          UIUtil.scaleForGUI(SECTION_GAP)));
     private final JTextArea report = new JTextArea();
     private final BuildingServicePanels servicePanels;
     private boolean refreshing;
@@ -81,12 +95,14 @@ class BuildingSystemsTab extends JPanel {
     BuildingSystemsTab(BuildingMainUI editor) {
         this.editor = editor;
         servicePanels = new BuildingServicePanels(editor);
-        setLayout(new BorderLayout(8, 8));
-        setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-        JPanel options = new JPanel(new GridLayout(0, 2, 8, 6));
+        int sectionGap = UIUtil.scaleForGUI(SECTION_GAP);
+        int optionGap = UIUtil.scaleForGUI(OPTION_GAP);
+        setLayout(new BorderLayout(sectionGap, sectionGap));
+        setBorder(BorderFactory.createEmptyBorder(sectionGap, sectionGap, sectionGap, sectionGap));
+        JPanel options = new JPanel(new GridLayout(0, 2, sectionGap, optionGap));
         options.setBorder(BorderFactory.createCompoundBorder(
               BorderFactory.createTitledBorder("Construction options — Tactical Operations: Advanced Rules"),
-              BorderFactory.createEmptyBorder(6, 6, 6, 6)));
+              BorderFactory.createEmptyBorder(optionGap, optionGap, optionGap, optionGap)));
         sealing.setName("Environmental sealing");
         heavyMetal.setName("Heavy-metal superstructure");
         officers.setName("Civilian officers");
@@ -120,11 +136,11 @@ class BuildingSystemsTab extends JPanel {
         portalTemplates.addActionListener(event -> BuildingPlacementDialogs.portalTemplates(editor));
         add(options, BorderLayout.NORTH);
 
-        JPanel services = new JPanel(new BorderLayout(8, 8));
+        JPanel services = new JPanel(new BorderLayout(sectionGap, sectionGap));
         services.setName("Building service sections");
         totals.setBorder(BorderFactory.createCompoundBorder(
               BorderFactory.createTitledBorder("Capacity, crew, power & validation"),
-              BorderFactory.createEmptyBorder(8, 8, 8, 8)));
+              BorderFactory.createEmptyBorder(sectionGap, sectionGap, sectionGap, sectionGap)));
         JPanel planning = new JPanel(new WrapLayout(FlowLayout.LEFT));
         planning.add(new JLabel("Combat hours per day:"));
         planning.add(combatHours);
@@ -136,13 +152,14 @@ class BuildingSystemsTab extends JPanel {
         totals.add(planning, BorderLayout.NORTH);
         report.setEditable(false);
         report.setName("Building construction report");
-        report.setFont(new java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12));
-        report.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        report.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UIUtil.scaleForGUI(REPORT_FONT_SIZE)));
+        report.setBorder(BorderFactory.createEmptyBorder(sectionGap, sectionGap, sectionGap, sectionGap));
         totals.add(new JScrollPane(report), BorderLayout.CENTER);
         services.add(servicePanels.doors, BorderLayout.WEST);
         services.add(servicePanels.elevators, BorderLayout.CENTER);
-        setMinimumSize(new java.awt.Dimension(servicePanels.doors.getMinimumSize().width
-              + servicePanels.elevators.getMinimumSize().width + 24, 160));
+        setMinimumSize(new Dimension(servicePanels.doors.getMinimumSize().width
+              + servicePanels.elevators.getMinimumSize().width + UIUtil.scaleForGUI(SERVICE_PANEL_MARGIN),
+              UIUtil.scaleForGUI(MINIMUM_HEIGHT)));
         add(services, BorderLayout.CENTER);
         sealing.addActionListener(e -> apply());
         heavyMetal.addActionListener(e -> apply());
