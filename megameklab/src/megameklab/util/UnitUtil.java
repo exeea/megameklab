@@ -282,8 +282,12 @@ public class UnitUtil {
      * {@code Entity.LOC_NONE}. Generally, equipment that does not make sense when unallocated is either deleted or left
      * in its location. Depending on unit type, ammo is left in place when its placement is not free (fighters).
      * Unallocated Clan CASE is removed (but all other forms of CASE/CASE II/CASE-P are not). Weapon bays are deleted.
+     * On an Omni unit, fixed equipment belongs to the base chassis and is left in its location; only pod-mounted
+     * equipment is unallocated.
      */
     public static void removeAllCriticalSlots(Entity unit) {
+        LOGGER.debug("[OmniPods] {}: resetting slots, fixed Omni equipment {}", unit.getShortName(),
+              unit.isOmni() ? "stays in place" : "does not apply (not an Omni)");
         if (unit instanceof AeroSpaceFighter fighter) {
             AeroUtil.removeAllCriticalSlotsFromFighter(fighter);
         } else if (unit instanceof BattleArmor battleArmor) {
@@ -302,15 +306,19 @@ public class UnitUtil {
                 for (int i = 0; i < unit.getNumberOfCriticalSlots(loc); i++) {
                     CriticalSlot cs = unit.getCritical(loc, i);
                     if ((cs != null) && (cs.getType() == CriticalSlot.TYPE_EQUIPMENT)) {
-                        Mounted<?> m1 = cs.getMount();
-                        Mounted<?> m2 = cs.getMount2();
-                        if ((m2 != null) && (!UnitUtil.isFixedLocationSpreadEquipment(m2.getType()))) {
-                            UnitUtil.removeCriticalSlots(unit, m2);
-                            UnitUtil.changeMountStatus(unit, m2, Entity.LOC_NONE, Entity.LOC_NONE, false);
+                        Mounted<?> firstMount = cs.getMount();
+                        Mounted<?> secondMount = cs.getMount2();
+                        if ((secondMount != null)
+                              && !UnitUtil.isFixedLocationSpreadEquipment(secondMount.getType())
+                              && !isFixedOmniMount(unit, secondMount)) {
+                            UnitUtil.removeCriticalSlots(unit, secondMount);
+                            UnitUtil.changeMountStatus(unit, secondMount, Entity.LOC_NONE, Entity.LOC_NONE, false);
                         }
-                        if ((m1 != null) && (!UnitUtil.isFixedLocationSpreadEquipment(m1.getType()))) {
-                            UnitUtil.removeCriticalSlots(unit, m1);
-                            UnitUtil.changeMountStatus(unit, m1, Entity.LOC_NONE, Entity.LOC_NONE, false);
+                        if ((firstMount != null)
+                              && !UnitUtil.isFixedLocationSpreadEquipment(firstMount.getType())
+                              && !isFixedOmniMount(unit, firstMount)) {
+                            UnitUtil.removeCriticalSlots(unit, firstMount);
+                            UnitUtil.changeMountStatus(unit, firstMount, Entity.LOC_NONE, Entity.LOC_NONE, false);
                         }
                     }
                 }
@@ -368,8 +376,9 @@ public class UnitUtil {
 
     /**
      * Adds the given Mounted equipment to the given unit in the given location, applying rearMounted, by forwarding to
-     * Entity.addEquipment() -- see that method for details. Also sets the equipment to pod-mounted on Omni units if
-     * possible, and updates Clan CASE placement on Meks. This method is an MML wrapper for Entity.addEquipment().
+     * Entity.addEquipment() -- see that method for details. On Omni units, new equipment becomes pod-mounted if
+     * possible, while equipment already on the unit that is only being placed keeps its pod or fixed status. Also
+     * updates Clan CASE placement on Meks. This method is an MML wrapper for Entity.addEquipment().
      *
      * @param unit        The Entity
      * @param mounted     The equipment to add
@@ -381,8 +390,13 @@ public class UnitUtil {
      */
     public static void addMounted(Entity unit, Mounted<?> mounted, int loc, boolean rearMounted)
           throws LocationFullException {
+        boolean isAlreadyOnUnit = unit.getEquipmentNum(mounted) != -1;
         unit.addEquipment(mounted, loc, rearMounted);
-        mounted.setOmniPodMounted(canPodMount(unit, mounted));
+        if (isAlreadyOnUnit) {
+            keepPodStatusWhereAllowed(unit, mounted);
+        } else {
+            mounted.setOmniPodMounted(canPodMount(unit, mounted));
+        }
 
         if (unit instanceof Mek mek) {
             MekUtil.updateClanCasePlacement(mek);
@@ -644,6 +658,36 @@ public class UnitUtil {
      */
     public static Mounted<?> findUnallocatedAmmo(Entity unit, EquipmentType at) {
         return ConstructionUtil.findUnallocatedAmmo(unit, at);
+    }
+
+    /**
+     * Keeps equipment that is being moved or placed on an Omni unit pod-mounted or fixed as it was, turning a pod into
+     * fixed equipment only where the rules no longer allow it as a pod. Placing equipment must not decide its status
+     * afresh: re-placed fixed equipment that silently became a pod altered the base chassis, and a MekHQ refit to the
+     * design became Class F (MegaMekLab #2400, MekHQ #10981).
+     *
+     * @param unit    the unit the equipment is on
+     * @param mounted the equipment being moved or placed
+     */
+    public static void keepPodStatusWhereAllowed(Entity unit, Mounted<?> mounted) {
+        if (mounted.isOmniPodMounted() && !canPodMount(unit, mounted)) {
+            LOGGER.debug("[OmniPods] {}: {} can no longer be a pod here and becomes fixed", unit.getShortName(),
+                  mounted.getName());
+            mounted.setOmniPodMounted(false);
+        }
+    }
+
+    /**
+     * Checks whether the equipment is part of an Omni unit's base chassis, that is, fixed rather than pod-mounted.
+     * Equipment on a unit that is not an Omni is never fixed in this sense.
+     *
+     * @param unit    the unit the equipment is on
+     * @param mounted the equipment to test
+     *
+     * @return {@code true} when the unit is an Omni and the equipment is not pod-mounted
+     */
+    public static boolean isFixedOmniMount(Entity unit, Mounted<?> mounted) {
+        return unit.isOmni() && !mounted.isOmniPodMounted();
     }
 
     /**
@@ -1086,15 +1130,13 @@ public class UnitUtil {
                     return 0;
                 }
 
-                if (wm.getLinkedBy() instanceof MiscMounted linkMount) {
-                    if (linkMount.getType().hasFlag(MiscTypeFlag.F_LASER_INSULATOR)) {
-                        heat--;
-                    } else if (linkMount.getType().hasFlag(MiscTypeFlag.F_PPC_CAPACITOR)
-                          && wm.hasChargedOrChargingCapacitor() == 0) {
-                        // If the capacitor is charged it will have been counted already, only add 5 heat if it's
-                        // not charged. For Lab purposes, we always pretend that the capacitor is charged.
-                        heat += 5;
-                    }
+                if (wm.getEnhancement(MiscTypeFlag.F_LASER_INSULATOR) != null) {
+                    heat--;
+                } else if ((wm.getEnhancement(MiscTypeFlag.F_PPC_CAPACITOR) != null)
+                      && wm.hasChargedOrChargingCapacitor() == 0) {
+                    // If the capacitor is charged it will have been counted already, only add 5 heat if it's
+                    // not charged. For Lab purposes, we always pretend that the capacitor is charged.
+                    heat += 5;
                 }
 
                 // Order matters since RACWeapons are UACWeapons
@@ -1669,6 +1711,8 @@ public class UnitUtil {
          * bays, we need to create them in the new location and fill them. If the unit doesn't use bays, we will
          * iterate through the critical slots to get the equipment in the same order to be nice and tidy.
          */
+        // Copies by their source, so that each copied enhancement goes to the copy of its own weapon
+        Map<Mounted<?>, Mounted<?>> copies = new HashMap<>();
         if (entity.usesWeaponBays()) {
             List<WeaponMounted> bayList = entity.getWeaponBayList()
                   .stream()
@@ -1683,6 +1727,7 @@ public class UnitUtil {
                     entity.addEquipment(newBay, toLoc, bay.isRearMounted());
                     for (WeaponMounted bayW : bay.getBayWeapons()) {
                         WeaponMounted toAdd = (WeaponMounted) copyEquipment(entity, toLoc, bayW, removed);
+                        copies.put(bayW, toAdd);
                         newBay.addWeaponToBay(toAdd);
                     }
                     for (AmmoMounted ammo : bay.getBayAmmo()) {
@@ -1695,17 +1740,23 @@ public class UnitUtil {
             List<MiscMounted> miscList = new ArrayList<>(entity.getMisc());
             for (MiscMounted m : miscList) {
                 if ((m.getLocation() == fromLoc) && (m.isRearMounted() ? includeRear : includeForward)) {
-                    copyEquipment(entity, toLoc, m, removed);
+                    copies.put(m, copyEquipment(entity, toLoc, m, removed));
                 }
             }
         } else {
             for (int slot = 0; slot < entity.getNumberOfCriticalSlots(fromLoc); slot++) {
                 final CriticalSlot criticalSlot = entity.getCritical(fromLoc, slot);
                 if ((null != criticalSlot) && (criticalSlot.getType() == CriticalSlot.TYPE_EQUIPMENT)) {
-                    copyEquipment(entity, toLoc, criticalSlot.getMount(), removed);
+                    copies.put(criticalSlot.getMount(), copyEquipment(entity, toLoc, criticalSlot.getMount(), removed));
                 }
             }
         }
+        // Reused mounts keep their place in the equipment list, so file order can't tell which weapon is whose
+        copies.forEach((source, copy) -> {
+            if (MiscType.isWeaponEnhancement(source.getType()) && copies.containsKey(source.getLinked())) {
+                copy.setLinked(copies.get(source.getLinked()));
+            }
+        });
 
         // Link up Artemis, etc.
         try {

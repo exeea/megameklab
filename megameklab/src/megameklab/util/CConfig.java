@@ -57,6 +57,7 @@ import megamek.common.Configuration;
 import megamek.common.enums.WeaponSortOrder;
 import megamek.common.game.Game;
 import megamek.common.options.OptionsConstants;
+import megamek.common.preference.PreferenceManager;
 import megamek.common.rules.core.CoreRulesManager;
 import megamek.common.rules.totalwarfare.TWRulesManager;
 import megamek.logging.MMLogger;
@@ -173,7 +174,7 @@ public final class CConfig {
     public static final String NAG_IMPORT_SETTINGS = "nag_import_settings";
 
     public static final String MEK_AUTOFILL = "mekAutofill";
-    public static final String MEK_AUTO_SORT = "mekAutoSort";
+    public static final String MEK_AUTO_SORT = "mekAutoSortCriticalSlots";
     public static final String MEK_AUTO_COMPACT = "mekAutoCompact";
 
     public static final String PQ_SINGLE_PRINT = "pqSinglePrint";
@@ -216,7 +217,7 @@ public final class CConfig {
         defaults.setProperty(RS_DAMAGE_COLOR, PrintRecordSheet.FILL_RED);
         defaults.setProperty(NAG_EQUIPMENT_CTRL_CLICK, Boolean.toString(true));
         defaults.setProperty(MEK_AUTOFILL, Boolean.toString(true));
-        defaults.setProperty(MEK_AUTO_SORT, Boolean.toString(true));
+        defaults.setProperty(MEK_AUTO_SORT, Boolean.toString(false));
         defaults.setProperty(MEK_AUTO_COMPACT, Boolean.toString(true));
         defaults.setProperty(FILE_LAST_DIRECTORY, Configuration.unitsDir().toString());
         defaults.setProperty(FILE_CHOOSER_WINDOW, "");
@@ -628,6 +629,17 @@ public final class CConfig {
 
     public static boolean showAvailabilityTab() {
         return CConfig.getBooleanParam(CConfig.MISC_SHOW_AVAILABILITY_TAB);
+    }
+
+    /**
+     * The Fluff tab follows MegaMek's suite-wide "Show Unit Fluff Text" client setting rather than a CConfig value, so
+     * one setting controls the fluff in MegaMek, MegaMekLab and MekHQ. Like the Availability tab, it is read when an
+     * editor is built, so a change takes effect on the next unit opened.
+     *
+     * @return {@code true} if the unit editors should show the Fluff tab
+     */
+    public static boolean showFluffTab() {
+        return PreferenceManager.getClientPreferences().getShowUnitFluffText();
     }
 
     public static void resetWindowPositions() {

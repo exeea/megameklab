@@ -43,7 +43,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -109,8 +108,32 @@ public final class MekUtil {
     }
 
     /**
+     * An OmniMek's placed fixed heat sinks belong to its base chassis, so lowering the heat sink count takes them after
+     * the engine's integral heat sinks. Heat sinks added back fill the engine first, so lowering and raising the count
+     * then keeps the same fixed heat sinks instead of swapping them for pods, which a MekHQ refit treats as altering the
+     * base chassis (MegaMekLab #2400). Compact heat sinks keep the original order, as their pair counting expects the
+     * engine's heat sinks to go last.
+     *
+     * @param unit the Mek losing heat sinks
+     *
+     * @return {@code true} if placed fixed heat sinks go after the engine's integral heat sinks
+     */
+    private static boolean isKeepingPlacedFixedHeatSinksLast(Mek unit) {
+        if (!unit.isOmni()) {
+            return false;
+        }
+        if (unit.hasCompactHeatSinks()) {
+            logger.debug("[OmniHeatSinks] {}: compact heat sinks, placed fixed heat sinks keep the original removal order",
+                  unit.getShortName());
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * Removes the specified number of heat sinks from the mek Heat sinks are removed first with LOC_NONE above the free
-     * crit limit then they are removed with a location, and lastly they are removed below the free crit limit
+     * crit limit then they are removed with a location, and lastly they are removed below the free crit limit. On an
+     * OmniMek, pods go before the engine's integral heat sinks, and placed fixed heat sinks go last.
      *
      */
     public static void removeHeatSinks(Mek unit, int number) {
@@ -155,8 +178,13 @@ public final class MekUtil {
         }
         toRemove.addAll(unassigned);
         toRemove.addAll(omniAssigned);
-        toRemove.addAll(assigned);
-        toRemove.addAll(free);
+        if (isKeepingPlacedFixedHeatSinksLast(unit)) {
+            toRemove.addAll(free);
+            toRemove.addAll(assigned);
+        } else {
+            toRemove.addAll(assigned);
+            toRemove.addAll(free);
+        }
         if (unit.hasCompactHeatSinks()) {
             // Need to do some number magic here. The unassigned, omniAssigned, and assigned slots
             // should each contain two heat sinks, but if we dip into the free then we are looking
@@ -203,14 +231,37 @@ public final class MekUtil {
         if (sinkType.hasFlag(MiscType.F_COMPACT_HEAT_SINK)) {
             addCompactHeatSinkMounts(unit, hsAmount);
         } else {
+            int emptyEngineSlots = countEmptyEngineHeatSinkSlots(unit);
             for (; hsAmount > 0; hsAmount--) {
                 try {
-                    unit.addEquipment(Mounted.createMounted(unit, sinkType), Entity.LOC_NONE, false);
+                    Mounted<?> heatSink = Mounted.createMounted(unit, sinkType);
+                    unit.addEquipment(heatSink, Entity.LOC_NONE, false);
+                    boolean isEngineHeatSink = emptyEngineSlots-- > 0;
+                    heatSink.setOmniPodMounted(!isEngineHeatSink && UnitUtil.canPodMount(unit, heatSink));
                 } catch (Exception ex) {
                     logger.error("", ex);
                 }
             }
         }
+    }
+
+    /**
+     * Counts how many more heat sinks the engine can hold without critical slots. On an OmniMek those belong to the
+     * base chassis and are fixed, so new heat sinks fill them first as fixed and go in as pods beyond them.
+     *
+     * @param unit the Mek getting heat sinks
+     *
+     * @return the number of new heat sinks the engine takes
+     */
+    private static int countEmptyEngineHeatSinkSlots(Mek unit) {
+        int engineHeatSinks = 0;
+        for (Mounted<?> mounted : unit.getMisc()) {
+            boolean isUnplacedHeatSink = UnitUtil.isHeatSink(mounted) && (mounted.getLocation() == Entity.LOC_NONE);
+            if (isUnplacedHeatSink && !mounted.getType().hasFlag(MiscType.F_IS_DOUBLE_HEAT_SINK_PROTOTYPE)) {
+                engineHeatSinks++;
+            }
+        }
+        return Math.max(0, UnitUtil.getCriticalFreeHeatSinks(unit, false) - engineHeatSinks);
     }
 
     public static void addCompactHeatSinkMounts(Mek unit, int hsAmount) {
@@ -927,6 +978,8 @@ public final class MekUtil {
         int engineFreeHS = UnitUtil.getCriticalFreeHeatSinks(mek, mek.hasCompactHeatSinks());
         // Create a copy of the equipment list to iterate over
         List<Mounted<?>> equipmentList = new ArrayList<>(mek.getEquipment());
+        // Fixed equipment first, so an OmniMek's engine keeps its fixed heat sinks and the pod ones get slots
+        equipmentList.sort(Comparator.comparing(Mounted::isOmniPodMounted));
         for (Mounted<?> mount : equipmentList) {
             if ((mount.getLocation() != Entity.LOC_NONE)
                   || (UnitUtil.isHeatSink(mount)
@@ -1068,11 +1121,11 @@ public final class MekUtil {
     public static List<CriticalSlot> reOrderLinkedEquipment(List<CriticalSlot> presentGear) {
         List<CriticalSlot> resortedList = new ArrayList<>();
         Set<Mounted<?>> presentMounted = presentGear.stream().map(CriticalSlot::getMount).collect(toSet());
-        // Assemble all the linked gear that is not ammo (ammo is sorted differently)
+        // Assemble all the linked gear that is not ammo (ammo is sorted differently). A laser may carry several
+        // enhancements; each stays behind its weapon so that it keeps attaching to it.
         Set<Mounted<?>> linkedMounted = presentMounted.stream()
-              .map(Mounted::getLinkedBy)
-              .filter(Objects::nonNull)
-              .filter(linked -> linked.getType() instanceof MiscType)
+              .flatMap(mounted -> mounted.getLinkedEquipment().stream())
+              .filter(linked -> MiscType.isWeaponEnhancement(linked.getType()))
               .filter(presentMounted::contains)
               .collect(toSet());
 
@@ -1082,12 +1135,10 @@ public final class MekUtil {
             Mounted<?> currentMounted = critSlot.getMount();
             // after one mounted is fully added, see if there's a linkedMounted to add below
             // it
-            if ((lastMounted != null)
-                  && (currentMounted != lastMounted)
-                  && (lastMounted.getLinkedBy() != null)
-                  && (linkedMounted.contains(lastMounted.getLinkedBy()))) {
+            if ((lastMounted != null) && (currentMounted != lastMounted)) {
+                List<Mounted<?>> linked = lastMounted.getLinkedEquipment();
                 for (CriticalSlot linkedSlot : presentGear) {
-                    if (linkedSlot.getMount() == lastMounted.getLinkedBy()) {
+                    if (linked.contains(linkedSlot.getMount()) && linkedMounted.contains(linkedSlot.getMount())) {
                         resortedList.add(linkedSlot);
                     }
                 }
@@ -1112,15 +1163,15 @@ public final class MekUtil {
             return 1;
         } else if (UnitUtil.isHeatSink(mounted)) {
             return 2;
-        } else if (UnitUtil.isJumpJet(mounted)) {
+        } else if (UnitUtil.isJumpJet(mounted) || hasMiscFlag(mounted, MiscType.F_UMU)) {
             return 3;
-        } else if (isMekWeapon(mounted.getType(), mek)) {
+        } else if (isMekWeapon(mounted.getType(), mek) || isAMS(mounted)) {
             return 4;
         } else if (mounted.getType() instanceof AmmoType) {
             return 5;
-        } else if (mounted.getType().isHittable() && !mounted.getType().hasFlag(MiscType.F_SCM)) {
+        } else if (mounted.getType().isHittable() && !hasMiscFlag(mounted, MiscType.F_SCM)) {
             return 6;
-        } else if (mounted.getType().hasFlag(MiscType.F_SCM)) {
+        } else if (hasMiscFlag(mounted, MiscType.F_SCM)) {
             return 7;
         } else if (isCASE(mounted)) {
             return 8;
@@ -1131,6 +1182,14 @@ public final class MekUtil {
         } else {
             return 11;
         }
+    }
+
+    private static boolean hasMiscFlag(Mounted<?> mounted, MiscTypeFlag flag) {
+        return (mounted.getType() instanceof MiscType) && mounted.getType().hasFlag(flag);
+    }
+
+    private static boolean isAMS(Mounted<?> mounted) {
+        return (mounted.getType() instanceof WeaponType) && mounted.getType().hasFlag(WeaponType.F_AMS);
     }
 
     public static boolean isPartialWing(Mounted<?> mounted) {
@@ -1410,11 +1469,13 @@ public final class MekUtil {
                 double dmgB = 0;
                 // Weapons that deal heat but not damage should sort last after weapons that deal damage. The only
                 // weapon I could find with positive aerospace damage but only heat damage against Meks is the plasma
-                // cannon. If others exist, this could be made to be a more comprehensive check.
-                if (mountedA.getType() instanceof WeaponType && !(mountedA.getType() instanceof CLPlasmaCannon)) {
+                // cannon. An AMS, which shoots down missiles, also sorts after the weapons.
+                if (mountedA.getType() instanceof WeaponType && !(mountedA.getType() instanceof CLPlasmaCannon)
+                      && !isAMS(mountedA)) {
                     dmgA = ((WeaponType) mountedA.getType()).getShortAV();
                 }
-                if (mountedB.getType() instanceof WeaponType && !(mountedB.getType() instanceof CLPlasmaCannon)) {
+                if (mountedB.getType() instanceof WeaponType && !(mountedB.getType() instanceof CLPlasmaCannon)
+                      && !isAMS(mountedB)) {
                     dmgB = ((WeaponType) mountedB.getType()).getShortAV();
                 }
                 if (dmgA != dmgB) {
