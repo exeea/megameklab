@@ -35,13 +35,17 @@ package megameklab.printing;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 import megamek.common.equipment.AmmoMounted;
+import megamek.common.equipment.AmmoType;
 import megamek.common.equipment.EquipmentFlag;
 import megamek.common.equipment.EquipmentType;
 import megamek.common.equipment.Mounted;
+import megamek.common.equipment.WeaponMounted;
 import megamek.common.equipment.WeaponType;
 import megamek.common.units.Jumpship;
 import megamek.common.units.Warship;
@@ -56,14 +60,14 @@ import megamek.common.weapons.AmmoWeapon;
 public class WeaponBayText implements Comparable<WeaponBayText> {
 
     /**
-     * Keeps track of the distinct weapons in this bay, along with a count.
+     * Keeps track of the distinct weapons in this bay, along with a count, in the order the unit lists them.
      */
-    final Map<WeaponType, Integer> weapons = new HashMap<>();
+    final Map<WeaponType, Integer> weapons = new LinkedHashMap<>();
 
     /**
      * Track the ammo for each weaponType in the bay.
      */
-    final Map<WeaponType, List<Mounted<?>>> weaponAmmo = new HashMap<>();
+    final Map<WeaponType, List<Mounted<?>>> weaponAmmo = new LinkedHashMap<>();
 
     /**
      * Track any linked equipment that affects the AV or heat. By the rules, most of them are either all or none for the
@@ -73,6 +77,8 @@ public class WeaponBayText implements Comparable<WeaponBayText> {
      */
     final Map<WeaponType, Map<EquipmentType, Integer>> augmentations = new HashMap<>();
 
+    int heat;
+    boolean isAR10;
     final boolean rear;
     /**
      * The location of the bay, or locations if multiple identical bays are combined.
@@ -95,8 +101,14 @@ public class WeaponBayText implements Comparable<WeaponBayText> {
      *
      * @return Whether this is the first weapon of its type in the bay
      */
-    public boolean addBayWeapon(Mounted<?> weapon) {
-        WeaponType weaponType = (WeaponType) weapon.getType();
+    public boolean addBayWeapon(WeaponMounted weapon) {
+        WeaponType weaponType = weapon.getType();
+        if (weaponType.getAmmoType() == AmmoType.AmmoTypeEnum.AR10) {
+            // AR10 heat depends on the missile (TW p. 304). The sheet prints "*" even before ammo is linked.
+            isAR10 = true;
+        } else if (!weapon.isDestroyed() && !weapon.isJammed()) {
+            heat += weapon.getCurrentHeat();
+        }
         int count = weapons.merge(weaponType, 1, Integer::sum);
         for (Mounted<?> linked : weapon.getLinkedEquipment()) {
             augmentations.computeIfAbsent(weaponType, ignored -> new HashMap<>())
@@ -116,50 +128,70 @@ public class WeaponBayText implements Comparable<WeaponBayText> {
         }
     }
 
-    /** Immutable contents, excluding location. Ammo is a multiset of individual bins, not a shot total. */
-    CombinationKey combinationKey() {
-        Map<WeaponType, Map<AmmoDescriptor, Integer>> ammo = new HashMap<>();
-        for (Map.Entry<WeaponType, List<Mounted<?>>> entry : weaponAmmo.entrySet()) {
-            Map<AmmoDescriptor, Integer> counts = new HashMap<>();
-            for (Mounted<?> mounted : entry.getValue()) {
-                counts.merge(new AmmoDescriptor(mounted.getType().getShortName(), mounted.getBaseShotsLeft()), 1,
-                      Integer::sum);
-            }
-            ammo.put(entry.getKey(), Map.copyOf(counts));
-        }
-        Map<WeaponType, Map<EquipmentType, Integer>> augmentations = new HashMap<>();
-        for (Map.Entry<WeaponType, Map<EquipmentType, Integer>> entry : this.augmentations.entrySet()) {
-            augmentations.put(entry.getKey(), Map.copyOf(entry.getValue()));
-        }
-        return new CombinationKey(Map.copyOf(weapons), Map.copyOf(ammo), Map.copyOf(augmentations));
+    /**
+     * Determines if two WeaponBayTexts are laterally similar and hence can be combined. That is, if there is a weapon
+     * bay on the left side that is identical to one on the right side, then those two can be combined in a location
+     * like FRS/FLS. This allows weapon lists to be compacted.
+     *
+     * @param other The other instance
+     *
+     * @return Whether the two bays are identical
+     */
+    public boolean canCombine(WeaponBayText other) {
+        // Check for opposing sides
+        return loc.size() == 1
+              && checkOpposingSide(loc.getFirst(), other.loc.getFirst(), rear, other.rear)
+              && weapons.equals(other.weapons)
+              && (isAR10 || heat == other.heat)
+              && ammunitionMatch(other) && augmentations.equals(other.augmentations);
     }
 
-    record CombinationKey(Map<WeaponType, Integer> weapons,
-                          Map<WeaponType, Map<AmmoDescriptor, Integer>> ammo,
-                          Map<WeaponType, Map<EquipmentType, Integer>> augmentations) { }
+    /**
+     * Used to compare ammunition across WeaponBayTexts: the sheet prints a total for each munition, so bays whose
+     * totals match print the same, however their bins split them.
+     *
+     * @param other The other bay
+     *
+     * @return Whether each weapon type carries the same total of each munition
+     */
+    private boolean ammunitionMatch(WeaponBayText other) {
+        Function<Mounted<?>, String> shortName = ammo -> ammo.getType().getShortName();
+        return weaponAmmo.keySet().equals(other.weaponAmmo.keySet())
+              && weaponAmmo.keySet().stream()
+              .allMatch(weaponType -> ammoTotals(weaponType, shortName).equals(other.ammoTotals(weaponType, shortName)));
+    }
 
-    record AmmoDescriptor(String name, int shots) { }
+    /**
+     * @param weaponType A weapon type in the bay
+     * @param munition   Names the munition of a bin; bins of the same munition add up
+     *
+     * @return The shots of each munition the weapon type carries, in the order the bay lists them
+     */
+    Map<String, Integer> ammoTotals(WeaponType weaponType, Function<Mounted<?>, String> munition) {
+        Map<String, Integer> shots = new LinkedHashMap<>();
+        for (Mounted<?> ammo : weaponAmmo.getOrDefault(weaponType, List.of())) {
+            shots.merge(munition.apply(ammo), ammo.getBaseShotsLeft(), Integer::sum);
+        }
+        return shots;
+    }
 
-    static int opposingLocation(int location) {
-        return switch (location) {
-            case Jumpship.LOC_FLS -> Jumpship.LOC_FRS;
-            case Jumpship.LOC_FRS -> Jumpship.LOC_FLS;
-            case Jumpship.LOC_ALS -> Jumpship.LOC_ARS;
-            case Jumpship.LOC_ARS -> Jumpship.LOC_ALS;
-            case Warship.LOC_LBS -> Warship.LOC_RBS;
-            case Warship.LOC_RBS -> Warship.LOC_LBS;
-            default -> -1;
+    private boolean checkOpposingSide(int loc1, int loc2, boolean rear1, boolean rear2) {
+        return switch (loc1) {
+            // Jumpship.LOC_FLS and Jumpship.LOC_FRS are the same indices as
+            // Dropship.LOC_LEFT_WING and Dropship.LOC_RIGHT_WING
+            case Jumpship.LOC_FLS -> loc2 == Jumpship.LOC_FRS && rear1 == rear2;
+            case Jumpship.LOC_FRS -> loc2 == Jumpship.LOC_FLS && rear1 == rear2;
+            case Jumpship.LOC_ALS -> loc2 == Jumpship.LOC_ARS;
+            case Jumpship.LOC_ARS -> loc2 == Jumpship.LOC_ALS;
+            case Warship.LOC_LBS -> loc2 == Warship.LOC_RBS;
+            case Warship.LOC_RBS -> loc2 == Warship.LOC_LBS;
+            default -> false;
         };
-    }
-
-    static boolean rearMustMatch(int location) {
-        // The front-side indices also represent the left/right wings on a DropShip.
-        return location == Jumpship.LOC_FLS || location == Jumpship.LOC_FRS;
     }
 
     /**
      * Combine two WeaponBayTexts. Since they should both contain the same weapons, the only thing that needs to be
-     * updated is the locations. The caller must first match their contents and opposing locations.
+     * updated is the locations. This should only be called if canCombine returns true for both WeaponBayTexts.
      *
      * @param other The other bay to combine with this one
      */

@@ -36,11 +36,15 @@ package megameklab.printing;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
+import java.util.Map;
 
 import megamek.common.equipment.AmmoMounted;
 import megamek.common.equipment.EquipmentType;
+import megamek.common.equipment.EquipmentTypeLookup;
 import megamek.common.equipment.WeaponMounted;
+import megamek.common.equipment.WeaponType;
 import megamek.common.units.Aero;
+import megamek.common.units.Dropship;
 import megamek.common.units.Warship;
 import megameklab.testing.util.InitializeTypes;
 import org.junit.jupiter.api.Test;
@@ -78,17 +82,33 @@ class InventoryWriterBayAmmoTest {
         assertEquals(30, rows.getFirst().weaponAmmo.get(weapon.getType()).getFirst().getBaseShotsLeft());
     }
 
+    /** A DropShip allocates its ammunition to the bays whose weapons use it (TM p. 195), not to every bay on a side */
     @Test
-    void ammoMatchingIgnoresOrderButPreservesDuplicateBinCountsAndIndividualShots() throws Exception {
+    void eachBayPrintsOnlyItsOwnAmmo() throws Exception {
+        Dropship ship = new Dropship();
+        WeaponMounted front = addLrmBay(ship, false, 6);
+        WeaponMounted rear = addLrmBay(ship, true, 12);
+
+        List<WeaponBayText> bays = InventoryWriter.computeWeaponBayTexts(List.of(front, rear));
+
+        WeaponType lrm = (WeaponType) EquipmentType.get("ISLRM20");
+        assertEquals(2, bays.size());
+        assertEquals(Map.of("IS Ammo LRM-20", 6), totals(bays, false, lrm));
+        assertEquals(Map.of("IS Ammo LRM-20", 12), totals(bays, true, lrm));
+    }
+
+    /** The sheet prints each munition's total, so opposing bays print as one line however their bins split it */
+    @Test
+    void ammoMatchingComparesTheTotalOfEachMunition() throws Exception {
         Warship ship = new Warship();
         var left = bay(ship, Warship.LOC_LBS, false, 1, 10, 10, 20);
         var reordered = bay(ship, Warship.LOC_RBS, false, 1, 20, 10, 10);
-        var differentCounts = bay(ship, Warship.LOC_RBS, false, 1, 20, 20, 10);
+        var differentTotal = bay(ship, Warship.LOC_RBS, false, 1, 20, 20, 10);
         var sameTotal = bay(ship, Warship.LOC_RBS, false, 1, 15, 15, 10);
 
         assertEquals(1, InventoryWriter.computeWeaponBayTexts(List.of(left, reordered)).size());
-        assertEquals(2, InventoryWriter.computeWeaponBayTexts(List.of(left, differentCounts)).size());
-        assertEquals(2, InventoryWriter.computeWeaponBayTexts(List.of(left, sameTotal)).size());
+        assertEquals(2, InventoryWriter.computeWeaponBayTexts(List.of(left, differentTotal)).size());
+        assertEquals(1, InventoryWriter.computeWeaponBayTexts(List.of(left, sameTotal)).size());
     }
 
     @Test
@@ -168,4 +188,21 @@ class InventoryWriterBayAmmoTest {
         return bay;
     }
 
+    private static WeaponMounted addLrmBay(Dropship ship, boolean rear, int shots) throws Exception {
+        WeaponMounted bay = (WeaponMounted) ship.addEquipment(EquipmentType.get(EquipmentTypeLookup.LRM_BAY),
+              Dropship.LOC_LEFT_WING, rear);
+        WeaponMounted lrm = (WeaponMounted) ship.addEquipment(EquipmentType.get("ISLRM20"), Dropship.LOC_LEFT_WING,
+              rear);
+        bay.addWeaponToBay(lrm);
+        AmmoMounted ammo = (AmmoMounted) ship.addEquipment(EquipmentType.get("IS Ammo LRM-20"),
+              Dropship.LOC_LEFT_WING);
+        ammo.setShotsLeft(shots);
+        bay.addAmmoToBay(ammo);
+        return bay;
+    }
+
+    private static Map<String, Integer> totals(List<WeaponBayText> bays, boolean rear, WeaponType weaponType) {
+        WeaponBayText bay = bays.stream().filter(text -> text.rear == rear).findFirst().orElseThrow();
+        return bay.ammoTotals(weaponType, ammo -> ammo.getType().getInternalName());
+    }
 }
