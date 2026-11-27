@@ -562,11 +562,11 @@ public abstract class PrintRecordSheet implements Printable, IdConstants {
                             ratio, ratio));
             }
         }
+        makeBoldType();
         processImage(pageIndex - firstPage, pageFormat);
         applyCoreComponentsCriticalDamage();
         shadeTableRows();
         makeFrameless();
-        makeBoldType();
         return true;
     }
 

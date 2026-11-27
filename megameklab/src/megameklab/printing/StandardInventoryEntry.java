@@ -238,11 +238,13 @@ public class StandardInventoryEntry implements InventoryEntry, Comparable<Standa
     }
 
     private String ewMaxRange() {
-        if (mount.getType().hasFlag(MiscType.F_ANGEL_ECM) && mount.getType().hasFlag(MiscType.F_BA_EQUIPMENT)) {
+        if (mount.getType().hasFlag(MiscType.F_WATCHDOG)) {
+            return CConfig.formatScale(Game.rulesManager.getRulesEquipment().getWatchdogProbeRange(), false);
+        } else if (mount.getType().hasFlag(MiscType.F_NOVA)) {
+            return CConfig.formatScale(5, false);
+        } else if (mount.getType().hasFlag(MiscType.F_ANGEL_ECM) && mount.getType().hasFlag(MiscType.F_BA_EQUIPMENT)) {
             return "2";
-        } else if (mount.getType().hasFlag(MiscType.F_EW_EQUIPMENT)
-              || mount.getType().hasFlag(MiscType.F_WATCHDOG)
-              || mount.getType().hasFlag(MiscType.F_NOVA)) {
+        } else if (mount.getType().hasFlag(MiscType.F_EW_EQUIPMENT)) {
             return CConfig.formatScale(3, false);
         } else if (mount.getType().hasFlag(MiscType.F_SINGLE_HEX_ECM)) {
             return "0";
@@ -596,6 +598,15 @@ public class StandardInventoryEntry implements InventoryEntry, Comparable<Standa
     }
 
     @Override
+    public String getRangeLabel(int row) {
+        if (row == 0 && !mount.getEntity().isAero()
+              && mount.getType().hasAnyFlag(MiscType.F_WATCHDOG, MiscType.F_NOVA)) {
+            return String.format("%s (PRB) %s (ECM)", ewMaxRange(), CConfig.formatScale(6, false));
+        }
+        return "";
+    }
+
+    @Override
     public String getShortField(int row) {
         if (mount.getEntity().isAero() && !isMML && !isATM) {
             if ((row == 0) && (mount.getType() instanceof WeaponType)) {
@@ -672,7 +683,7 @@ public class StandardInventoryEntry implements InventoryEntry, Comparable<Standa
             if (row != 0) {
                 return "";
             }
-            var mod = mount.getType().getToHitModifier(mount);
+            var mod = baseHitModifier();
             return (mod != 0) ? "%+d".formatted(mod).replace("-", MINUS) : "0";
         }
         var hasTargComp = mount.getEntity().hasTargComp();
@@ -706,7 +717,7 @@ public class StandardInventoryEntry implements InventoryEntry, Comparable<Standa
 
         boolean explicitZero = false;
 
-        var mod = mount.getType().getToHitModifier(mount);
+        var mod = baseHitModifier();
 
         var linked = mount.getLinkedBy();
         if (linked != null) {
@@ -739,6 +750,13 @@ public class StandardInventoryEntry implements InventoryEntry, Comparable<Standa
         }
 
         return (mod != 0) ? "%+d".formatted(mod).replace("-", MINUS) : (explicitZero ? DASH : "");
+    }
+
+    private int baseHitModifier() {
+        if (mount.getType().hasFlag(MiscTypeFlag.S_CLAW)) {
+            return Game.rulesManager.getRulesPhysical().getClawToHitModifier();
+        }
+        return mount.getType().getToHitModifier(mount);
     }
 
     @Override

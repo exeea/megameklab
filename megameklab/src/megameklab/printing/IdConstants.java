@@ -41,6 +41,7 @@ public interface IdConstants {
     String MML_COLOR_ELEMENTS = "mml-color-elements";
     String MML_FIELD_WIDTH = "mml-field-width";
     String MML_GAP = "mml-gap";
+    String MML_MIRROR = "mml-mirror";
     String MML_MULTISECTION = "mml-multisection";
 
     String FOOTER = "footer";
@@ -245,6 +246,11 @@ public interface IdConstants {
     String MAIN_GUN_ARMOR = "armor_MG";
     String MAIN_GUN_SHADOW = "shadow_MG";
     String MAIN_GUN_TEXT = "text_MG";
+    String MAIN_GUN_HIT_ROW = "mainGunHitRow";
+    String MAIN_GUN_HIT_ROLL = "mainGunHitRoll";
+    String PROTOMEK_HIT_ROWS = "protoHitRows";
+    String PROTOMEK_FIRST_HIT_ROLL = "protoFirstHitRoll";
+    String TORSO_HIT_ROLL = "torsoHitRoll";
     String TORSO_WEAPON = "torsoWeapon_";
     String MAG_CLAMP_NOTE = "magClampNote";
     String MP_GROUND = "mpGround";
